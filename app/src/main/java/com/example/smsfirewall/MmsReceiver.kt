@@ -1,4 +1,4 @@
-package com.ornek.smsfirewall
+package com.example.smsfirewall
 
 import android.content.BroadcastReceiver
 import android.content.Context

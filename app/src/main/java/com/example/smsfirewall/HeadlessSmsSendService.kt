@@ -1,4 +1,4 @@
-package com.ornek.smsfirewall
+package com.example.smsfirewall
 
 import android.app.Service
 import android.content.Intent
