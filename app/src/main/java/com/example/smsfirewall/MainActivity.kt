@@ -19,6 +19,7 @@ import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.smsfirewall.databinding.ActivityMainBinding
 import kotlinx.coroutines.launch
+import android.net.Uri
 
 class MainActivity : AppCompatActivity() {
 

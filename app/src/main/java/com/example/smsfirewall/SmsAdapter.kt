@@ -6,7 +6,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.smsfirewall.databinding.ItemSmsBinding
 
 // Adapter sınıfımız, SmsModel listesini alır
-class SmsAdapter(private val smsList: List<SmsModel>) : RecyclerView.Adapter<SmsAdapter.SmsViewHolder>() {
+class SmsAdapter(private var smsList: List<SmsModel>) : RecyclerView.Adapter<SmsAdapter.SmsViewHolder>() {
 
     // Tasarımdaki görünümleri tutan yardımcı sınıf (ViewHolder)
     class SmsViewHolder(val binding: ItemSmsBinding) : RecyclerView.ViewHolder(binding.root)
@@ -29,5 +29,10 @@ class SmsAdapter(private val smsList: List<SmsModel>) : RecyclerView.Adapter<Sms
     // 3. ADIM: Listenin kaç elemanlı olduğunu söyler
     override fun getItemCount(): Int {
         return smsList.size
+    }
+
+    fun updatelist(newList: List<SmsModel>) {
+        smsList = newList
+        notifyDataSetChanged()
     }
 }
