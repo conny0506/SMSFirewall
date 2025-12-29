@@ -2,52 +2,48 @@ package com.example.smsfirewall
 
 import android.Manifest
 import android.app.Activity
-import android.app.AlertDialog
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.database.ContentObserver
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Telephony
-import android.widget.EditText
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.smsfirewall.databinding.ActivityMainBinding
-import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
+    private lateinit var smsAdapter: SmsAdapter
 
-    private val blockedWordDao by lazy { (application as SmsApp).database.blockedWordDao() }
+    private val smsObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            super.onChange(selfChange)
+            if (hasSmsReadPermission()) loadInboxMessages()
+        }
+    }
 
-    // 1. Varsayılan SMS olma sonucu
     private val roleRequestLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
-            Toast.makeText(this, "Varsayılan uygulama olduk!", Toast.LENGTH_SHORT).show()
             checkDefaultSmsApp()
-        } else {
-            Toast.makeText(this, "Varsayılan olma reddedildi.", Toast.LENGTH_SHORT).show()
+            loadInboxMessages()
         }
     }
 
-    // 2. Bildirim izni sonucu (Android 13+)
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (isGranted) {
-            Toast.makeText(this, "Bildirim izni verildi ✅", Toast.LENGTH_SHORT).show()
-        } else {
-            Toast.makeText(this, "Bildirim izni reddedildi ❌", Toast.LENGTH_SHORT).show()
-        }
-    }
+    ) { }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,66 +51,73 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupRecyclerView()
-        setupButtons()
 
-        // Uygulama açılır açılmaz izinleri kontrol et
+        // Buton dinleyicisi (Sadece varsayılan yap butonu kaldı)
+        binding.btnSetDefault.setOnClickListener { askDefaultSmsHandlerPermission() }
+
         askNotificationPermission()
     }
 
     override fun onResume() {
         super.onResume()
         checkDefaultSmsApp()
+        if (hasSmsReadPermission()) {
+            loadInboxMessages()
+            contentResolver.registerContentObserver(Uri.parse("content://sms"), true, smsObserver)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        contentResolver.unregisterContentObserver(smsObserver)
     }
 
     private fun setupRecyclerView() {
-        val dummySmsList = listOf(
-            SmsModel("+90555...", "Bu listede gerçek mesajları görmek için", System.currentTimeMillis()),
-            SmsModel("Bilgi", "Bir sonraki adımda Inbox'ı okuyacağız.", System.currentTimeMillis())
-        )
-        val adapter = SmsAdapter(dummySmsList)
+        smsAdapter = SmsAdapter(emptyList()) { clickedNumber ->
+            val intent = Intent(this, ConversationDetailActivity::class.java)
+            intent.putExtra("SENDER_NUMBER", clickedNumber)
+            startActivity(intent)
+        }
         binding.recyclerSms.layoutManager = LinearLayoutManager(this)
-        binding.recyclerSms.adapter = adapter
+        binding.recyclerSms.adapter = smsAdapter
     }
 
-    private fun setupButtons() {
-        binding.btnSetDefault.setOnClickListener {
-            askDefaultSmsHandlerPermission()
-        }
+    private fun loadInboxMessages() {
+        val distinctMessages = HashMap<String, SmsModel>()
+        val cursor = contentResolver.query(
+            Uri.parse("content://sms/inbox"),
+            arrayOf("address", "body", "date", "type"),
+            null, null, "date DESC"
+        )
 
-        binding.fabAddBlockWord.setOnClickListener {
-            showAddWordDialog()
+        if (cursor != null && cursor.moveToFirst()) {
+            val idxAddr = cursor.getColumnIndex("address")
+            val idxBody = cursor.getColumnIndex("body")
+            val idxDate = cursor.getColumnIndex("date")
+            val idxType = cursor.getColumnIndex("type") // Type okuyoruz
+
+            do {
+                if (idxAddr >= 0) {
+                    val address = cursor.getString(idxAddr)
+                    val body = cursor.getString(idxBody)
+                    val date = cursor.getLong(idxDate)
+                    val type = cursor.getInt(idxType)
+
+                    if (!distinctMessages.containsKey(address)) {
+                        distinctMessages[address] = SmsModel(address, body, date, type)
+                    }
+                }
+            } while (cursor.moveToNext())
+            cursor.close()
         }
+        smsAdapter.updateList(distinctMessages.values.toList())
     }
 
-    // Bildirim İzni İsteme Fonksiyonu
     private fun askNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) { // Android 13+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
-        }
-    }
-
-    private fun showAddWordDialog() {
-        val input = EditText(this)
-        input.hint = "Örn: bahis, casino"
-        AlertDialog.Builder(this)
-            .setTitle("Yasaklı Kelime Ekle")
-            .setView(input)
-            .setPositiveButton("Ekle") { _, _ ->
-                val word = input.text.toString().trim()
-                if (word.isNotEmpty()) {
-                    saveBlockedWord(word)
-                }
-            }
-            .setNegativeButton("İptal", null)
-            .show()
-    }
-
-    private fun saveBlockedWord(word: String) {
-        lifecycleScope.launch {
-            blockedWordDao.insert(BlockedWord(word = word))
-            Toast.makeText(this@MainActivity, "'$word' eklendi!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -140,5 +143,10 @@ class MainActivity : AppCompatActivity() {
             binding.btnSetDefault.isEnabled = true
             binding.btnSetDefault.text = "Varsayılan SMS Uygulaması Yap"
         }
+    }
+
+    private fun hasSmsReadPermission(): Boolean {
+        return ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED ||
+                Telephony.Sms.getDefaultSmsPackage(this) == packageName
     }
 }
