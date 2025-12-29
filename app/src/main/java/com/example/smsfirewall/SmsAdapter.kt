@@ -8,7 +8,8 @@ import com.example.smsfirewall.databinding.ItemSmsBinding
 
 class SmsAdapter(
     private var smsList: List<SmsModel>,
-    private val onClick: (String) -> Unit = {} // Tıklama özelliği
+    private val onClick: (String) -> Unit = {},
+    private val onLongClick: (SmsModel) -> Unit = {} // Uzun basma olayı
 ) : RecyclerView.Adapter<SmsAdapter.SmsViewHolder>() {
 
     class SmsViewHolder(val binding: ItemSmsBinding) : RecyclerView.ViewHolder(binding.root)
@@ -23,44 +24,33 @@ class SmsAdapter(
         holder.binding.txtSender.text = currentSms.sender
         holder.binding.txtMessageBody.text = currentSms.messageBody
 
-        // İkon veya Avatar varsa (önceki tasarım adımında eklediysek) burada bind edilebilir
-        // Örneğin: holder.binding.txtSender harf ikonunu ayarlayabiliriz.
-
+        // Tıklama (Detay sayfasına git)
         holder.itemView.setOnClickListener {
             onClick(currentSms.sender)
+        }
+
+        // Uzun Basma (Silme diyaloğu aç)
+        holder.itemView.setOnLongClickListener {
+            onLongClick(currentSms)
+            true
         }
     }
 
     override fun getItemCount(): Int = smsList.size
 
-    // GÜNCELLENEN KISIM: DiffUtil ile Akıllı Güncelleme
     fun updateList(newList: List<SmsModel>) {
         val diffCallback = SmsDiffCallback(smsList, newList)
         val diffResult = DiffUtil.calculateDiff(diffCallback)
-
         smsList = newList
-        // notifyDataSetChanged() yerine bunu kullanıyoruz:
         diffResult.dispatchUpdatesTo(this)
     }
 
-    // İki liste arasındaki farkı hesaplayan yardımcı sınıf
-    class SmsDiffCallback(
-        private val oldList: List<SmsModel>,
-        private val newList: List<SmsModel>
-    ) : DiffUtil.Callback() {
+    class SmsDiffCallback(private val oldList: List<SmsModel>, private val newList: List<SmsModel>) : DiffUtil.Callback() {
         override fun getOldListSize(): Int = oldList.size
         override fun getNewListSize(): Int = newList.size
-
-        // Aynı öğe mi? (Benzersiz ID kontrolü gibi - Tarih ve Gönderen yeterli)
-        override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-            val oldItem = oldList[oldItemPosition]
-            val newItem = newList[newItemPosition]
-            return oldItem.date == newItem.date && oldItem.sender == newItem.sender
+        override fun areItemsTheSame(oldPos: Int, newPos: Int): Boolean {
+            return oldList[oldPos].id == newList[newPos].id
         }
-
-        // İçerik aynı mı? (Görsel değişiklik var mı?)
-        override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean {
-            return oldList[oldItemPosition] == newList[newItemPosition]
-        }
+        override fun areContentsTheSame(oldPos: Int, newPos: Int): Boolean = oldList[oldPos] == newList[newPos]
     }
 }

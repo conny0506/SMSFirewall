@@ -1,9 +1,9 @@
 package com.example.smsfirewall
 
-// type: Int parametresini eklemeyi unutma!
 data class SmsModel(
+    val id: Long,            // Silme işlemi için gerekli ID
     val sender: String,
     val messageBody: String,
     val date: Long,
-    val type: Int // <-- BU SATIR EKSİK OLABİLİR
+    val type: Int            // 1: Gelen, 2: Giden
 )

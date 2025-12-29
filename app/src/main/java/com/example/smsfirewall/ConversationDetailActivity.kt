@@ -1,6 +1,7 @@
 package com.example.smsfirewall
 
 import android.Manifest
+import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.net.Uri
@@ -8,6 +9,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.telephony.SmsManager
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -16,7 +18,6 @@ import com.example.smsfirewall.databinding.ActivityConversationDetailBinding
 
 class ConversationDetailActivity : AppCompatActivity() {
 
-    // Artık yeni layout binding dosyasını kullanıyoruz
     private lateinit var binding: ActivityConversationDetailBinding
     private lateinit var chatAdapter: ChatAdapter
     private var senderNumber: String? = null
@@ -31,7 +32,6 @@ class ConversationDetailActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Binding sınıfı değişti dikkat!
         binding = ActivityConversationDetailBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -63,19 +63,14 @@ class ConversationDetailActivity : AppCompatActivity() {
     }
 
     private fun setupRecyclerView() {
+        // ChatAdapter oluşturulurken boş liste veriyoruz
         chatAdapter = ChatAdapter(emptyList())
-
-        // GÜNCELLEME: "stackFromEnd = true" kaldırıldı.
-        // Artık mesajlar varsayılan olarak yukarıdan aşağıya dizilecek.
         val layoutManager = LinearLayoutManager(this)
-        // layoutManager.stackFromEnd = false // Varsayılanı zaten false'tur.
-
         binding.recyclerChat.layoutManager = layoutManager
         binding.recyclerChat.adapter = chatAdapter
     }
 
     private fun sendMessage(destination: String, text: String) {
-        // İzin kontrolü
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
             Toast.makeText(this, "SMS gönderme izni yok!", Toast.LENGTH_SHORT).show()
             return
@@ -85,16 +80,23 @@ class ConversationDetailActivity : AppCompatActivity() {
             val smsManager = SmsManager.getDefault()
             smsManager.sendTextMessage(destination, null, text, null, null)
 
-            // Mesaj kutusunu temizle
-            binding.etMessage.setText("")
-            Toast.makeText(this, "Gönderildi", Toast.LENGTH_SHORT).show()
+            Log.d("SMS_FIREWALL", "Mesaj gönderildi: $text")
 
-            // Not: Gönderilen mesaj otomatik olarak content://sms/sent içine Android tarafından
-            // eklenecektir (Varsayılan app olduğumuz için). Observer bunu yakalayıp listeyi güncelleyecektir.
+            // Manuel olarak veritabanına kaydet
+            val values = ContentValues().apply {
+                put("address", destination)
+                put("body", text)
+                put("date", System.currentTimeMillis())
+                put("type", 2) // Giden mesaj
+                put("read", 1)
+            }
+            contentResolver.insert(Uri.parse("content://sms/sent"), values)
+
+            binding.etMessage.setText("")
 
         } catch (e: Exception) {
-            Toast.makeText(this, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-            e.printStackTrace()
+            Log.e("SMS_FIREWALL", "Hata: ${e.message}")
+            Toast.makeText(this, "Gönderim Hatası!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -102,33 +104,37 @@ class ConversationDetailActivity : AppCompatActivity() {
         val smsList = ArrayList<SmsModel>()
         val uri = Uri.parse("content://sms")
 
+        // SORGUNUN GÜNCELLENMİŞ HALİ: "_id" EKLENDİ
         val cursor = contentResolver.query(
             uri,
-            arrayOf("address", "body", "date", "type"),
+            arrayOf("_id", "address", "body", "date", "type"),
             "address = ?",
             arrayOf(phoneNumber),
             "date ASC"
         )
 
         if (cursor != null && cursor.moveToFirst()) {
+            val idxId = cursor.getColumnIndex("_id") // ID indexini al
             val idxBody = cursor.getColumnIndex("body")
             val idxDate = cursor.getColumnIndex("date")
             val idxType = cursor.getColumnIndex("type")
 
             do {
+                // ID değerini oku
+                val id = cursor.getLong(idxId)
                 val body = cursor.getString(idxBody)
                 val date = cursor.getLong(idxDate)
                 val type = cursor.getInt(idxType)
-                smsList.add(SmsModel(phoneNumber, body, date, type))
+
+                // MODELİ YENİ YAPIYA GÖRE OLUŞTUR (İlk parametre ID)
+                smsList.add(SmsModel(id, phoneNumber, body, date, type))
+
             } while (cursor.moveToNext())
             cursor.close()
         }
 
         chatAdapter.updateList(smsList)
 
-        // Yeni mesaj gelince veya gönderince yine de en alta kaydıralım mı?
-        // Kullanıcı "üstten başlasın" dedi ama sohbet akışı için en son mesajı görmek isteyebilir.
-        // Eğer istemezsen aşağıdaki if bloğunu silebilirsin.
         if (smsList.isNotEmpty()) {
             binding.recyclerChat.scrollToPosition(smsList.size - 1)
         }

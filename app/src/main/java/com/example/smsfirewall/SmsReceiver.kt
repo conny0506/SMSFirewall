@@ -18,13 +18,15 @@ class SmsReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == Telephony.Sms.Intents.SMS_DELIVER_ACTION) {
-
             val pendingResult = goAsync()
+            val db = AppDatabase.getDatabase(context) // Veritabanı erişimi
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    val dao = AppDatabase.getDatabase(context).blockedWordDao()
-                    val blockedWords = dao.getWordListRaw()
+                    val blockedDao = db.blockedWordDao()
+                    val spamDao = db.spamMessageDao() // Spam DAO
+
+                    val blockedWords = blockedDao.getWordListRaw()
                     val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
 
                     for (sms in messages) {
@@ -32,21 +34,18 @@ class SmsReceiver : BroadcastReceiver() {
                         val sender = sms.originatingAddress ?: "?"
                         val timestamp = sms.timestampMillis
 
-                        // KONTROL: Yasaklı kelime var mı?
                         val isSpam = blockedWords.any { messageBody.contains(it.lowercase()) }
 
                         if (isSpam) {
-                            Log.d("SMS_FIREWALL", "🚫 SPAM ENGELLENDİ: $sender")
-                            // Spam ise HİÇBİR ŞEY yapmıyoruz.
-                            // Veritabanına kaydetmiyoruz, bildirim göstermiyoruz.
-                            // Böylece mesaj sonsuzluğa karışıyor.
+                            Log.d("SMS_FIREWALL", "🚫 SPAM YAKALANDI VE KAYDEDİLDİ: $sender")
+
+                            // 1. Spam'i Veritabanına Kaydet (YENİ)
+                            spamDao.insert(SpamMessage(sender = sender, body = sms.messageBody, date = timestamp))
+
+                            // 2. Inbox'a kaydetme işlemini ATLADIK (Böylece ana ekrana düşmez)
                         } else {
-                            Log.d("SMS_FIREWALL", "✅ Temiz mesaj. Kaydediliyor...")
-
-                            // 1. Mesajı Android'in SMS Veritabanına Kaydet (Inbox'a yaz)
+                            // Temiz mesaj, Inbox'a kaydet ve bildir
                             saveSmsToDeviceInbox(context, sender, sms.messageBody, timestamp)
-
-                            // 2. Kullanıcıya Bildirim Göster
                             showNotification(context, sender, sms.messageBody)
                         }
                     }
@@ -59,14 +58,13 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    // Mesajı telefonun gelen kutusuna kaydeden fonksiyon
     private fun saveSmsToDeviceInbox(context: Context, sender: String, body: String, date: Long) {
         try {
             val values = ContentValues().apply {
                 put(Telephony.Sms.ADDRESS, sender)
                 put(Telephony.Sms.BODY, body)
                 put(Telephony.Sms.DATE, date)
-                put(Telephony.Sms.READ, 0) // 0 = Okunmadı, 1 = Okundu
+                put(Telephony.Sms.READ, 0)
                 put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
             }
             context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
@@ -75,18 +73,15 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    // Bildirim gösteren fonksiyon
     private fun showNotification(context: Context, sender: String, body: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        // Bildirime tıklayınca uygulamayı açmak için Intent
         val intent = Intent(context, MainActivity::class.java)
         val pendingIntent = PendingIntent.getActivity(
             context, 0, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
         val notification = NotificationCompat.Builder(context, "sms_channel_id")
-            .setSmallIcon(android.R.drawable.sym_action_chat) // Varsayılan bir ikon kullandık
+            .setSmallIcon(android.R.drawable.sym_action_chat)
             .setContentTitle(sender)
             .setContentText(body)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -95,7 +90,6 @@ class SmsReceiver : BroadcastReceiver() {
             .setColor(Color.BLUE)
             .build()
 
-        // Her bildirim için rastgele bir ID (veya timestamp) kullanarak üst üste binmesini önleyebiliriz
         notificationManager.notify(System.currentTimeMillis().toInt(), notification)
     }
 }

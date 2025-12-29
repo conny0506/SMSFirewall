@@ -45,7 +45,13 @@
         <activity
             android:name=".ConversationDetailActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
             android:label="Sohbet Detayı" />
+
+        <activity
+            android:name=".SpamBoxActivity"
+            android:exported="false"
+            android:label="Spam Kutusu" />
 
         <receiver
             android:name=".SmsReceiver"
