@@ -6,5 +6,5 @@ data class SmsModel(
     val messageBody: String,
     val date: Long,
     val type: Int,
-    var isSelected: Boolean = false // Varsayılan olarak false
+    var isSelected: Boolean = false // YENİ: Seçim durumu
 )

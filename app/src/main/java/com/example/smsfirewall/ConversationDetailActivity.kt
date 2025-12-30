@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.telephony.PhoneNumberUtils
 import android.telephony.SmsManager
 import android.view.View
 import android.widget.Toast
@@ -60,6 +61,19 @@ class ConversationDetailActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (senderNumber != null) {
+            loadMessagesForNumber(senderNumber!!)
+            contentResolver.registerContentObserver(Uri.parse("content://sms"), true, smsObserver)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        contentResolver.unregisterContentObserver(smsObserver)
+    }
+
     private fun setupRecyclerView() {
         chatAdapter = ChatAdapter(emptyList()) { count ->
             if (count > 0) {
@@ -72,12 +86,11 @@ class ConversationDetailActivity : AppCompatActivity() {
             }
         }
         binding.recyclerChat.layoutManager = LinearLayoutManager(this).apply {
-            stackFromEnd = true // Mesajları alttan başlat (WhatsApp gibi)
+            stackFromEnd = true
         }
         binding.recyclerChat.adapter = chatAdapter
     }
 
-    // Geri tuşu seçimi iptal etsin
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (chatAdapter.isSelectionMode) {
@@ -87,42 +100,52 @@ class ConversationDetailActivity : AppCompatActivity() {
         }
     }
 
-    private fun loadMessagesForNumber(phoneNumber: String) {
-        val smsList = ArrayList<SmsModel>()
-        val uri = Uri.parse("content://sms")
-        // Adres sorgusunu 'address = ?' olarak yapıyoruz.
-        val cursor = contentResolver.query(uri,
-            arrayOf("_id", "address", "body", "date", "type"),
-            "address = ?",
-            arrayOf(phoneNumber),
-            "date ASC"
-        )
+    // --- KRİTİK DÜZELTME BURADA ---
+    private fun loadMessagesForNumber(targetNumber: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val smsList = ArrayList<SmsModel>()
+            val uri = Uri.parse("content://sms")
 
-        if (cursor != null && cursor.moveToFirst()) {
-            val idxId = cursor.getColumnIndex("_id")
-            val idxBody = cursor.getColumnIndex("body")
-            val idxDate = cursor.getColumnIndex("date")
-            val idxType = cursor.getColumnIndex("type")
-            do {
-                smsList.add(SmsModel(
-                    id = cursor.getLong(idxId),
-                    sender = phoneNumber,
-                    messageBody = cursor.getString(idxBody),
-                    date = cursor.getLong(idxDate),
-                    type = cursor.getInt(idxType)
-                ))
-            } while (cursor.moveToNext())
-            cursor.close()
-        }
+            // 1. Where şartı koymadan tüm mesajları çekiyoruz (veya sadece address sütununu filtrelemeden)
+            // Bu sayede +90, 0555 gibi format farklarına takılmayız.
+            val cursor = contentResolver.query(
+                uri,
+                arrayOf("_id", "address", "body", "date", "type"),
+                null,
+                null,
+                "date ASC"
+            )
 
-        // HATA AYIKLAMA: Eğer liste boşsa kullanıcıya haber ver (Numara formatı sorunu olabilir)
-        if (smsList.isEmpty()) {
-            // Toast.makeText(this, "Mesaj bulunamadı: $phoneNumber", Toast.LENGTH_SHORT).show()
-        }
+            if (cursor != null && cursor.moveToFirst()) {
+                val idxId = cursor.getColumnIndex("_id")
+                val idxAddr = cursor.getColumnIndex("address")
+                val idxBody = cursor.getColumnIndex("body")
+                val idxDate = cursor.getColumnIndex("date")
+                val idxType = cursor.getColumnIndex("type")
 
-        chatAdapter.updateList(smsList)
-        if (smsList.isNotEmpty() && !chatAdapter.isSelectionMode) {
-            binding.recyclerChat.scrollToPosition(smsList.size - 1)
+                do {
+                    val addressFromDb = cursor.getString(idxAddr)
+
+                    // 2. PhoneNumberUtils ile Gevşek Eşleştirme Yapıyoruz
+                    if (addressFromDb != null && PhoneNumberUtils.compare(this@ConversationDetailActivity, targetNumber, addressFromDb)) {
+                        smsList.add(SmsModel(
+                            id = cursor.getLong(idxId),
+                            sender = addressFromDb,
+                            messageBody = cursor.getString(idxBody),
+                            date = cursor.getLong(idxDate),
+                            type = cursor.getInt(idxType)
+                        ))
+                    }
+                } while (cursor.moveToNext())
+                cursor.close()
+            }
+
+            withContext(Dispatchers.Main) {
+                chatAdapter.updateList(smsList)
+                if (smsList.isNotEmpty() && !chatAdapter.isSelectionMode) {
+                    binding.recyclerChat.scrollToPosition(smsList.size - 1)
+                }
+            }
         }
     }
 
@@ -146,6 +169,7 @@ class ConversationDetailActivity : AppCompatActivity() {
                 withContext(Dispatchers.Main) {
                     chatAdapter.clearSelection()
                     Toast.makeText(this@ConversationDetailActivity, "Silindi", Toast.LENGTH_SHORT).show()
+                    loadMessagesForNumber(senderNumber!!) // Listeyi yenile
                 }
             } catch (e: Exception) { e.printStackTrace() }
         }

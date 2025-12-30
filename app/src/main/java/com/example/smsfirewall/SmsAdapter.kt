@@ -1,5 +1,6 @@
 package com.example.smsfirewall
 
+import android.graphics.Color
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -9,8 +10,11 @@ import com.example.smsfirewall.databinding.ItemSmsBinding
 class SmsAdapter(
     private var smsList: List<SmsModel>,
     private val onClick: (String) -> Unit = {},
-    private val onLongClick: (SmsModel) -> Unit = {}
+    // Seçim değiştiğinde Activity'e haber verecek fonksiyon
+    private val onSelectionChanged: (Int) -> Unit = {}
 ) : RecyclerView.Adapter<SmsAdapter.SmsViewHolder>() {
+
+    var isSelectionMode = false
 
     class SmsViewHolder(val binding: ItemSmsBinding) : RecyclerView.ViewHolder(binding.root)
 
@@ -24,16 +28,58 @@ class SmsAdapter(
         holder.binding.txtSender.text = currentSms.sender
         holder.binding.txtMessageBody.text = currentSms.messageBody
 
-        holder.itemView.setOnClickListener { onClick(currentSms.sender) }
+        // GÖRSELLİK: Seçiliyse arkaplanı gri yap
+        if (currentSms.isSelected) {
+            holder.itemView.setBackgroundColor(Color.parseColor("#CFD8DC"))
+        } else {
+            holder.itemView.setBackgroundColor(Color.WHITE)
+        }
+
+        // TIKLAMA
+        holder.itemView.setOnClickListener {
+            if (isSelectionMode) {
+                toggleSelection(position)
+            } else {
+                onClick(currentSms.sender)
+            }
+        }
+
+        // UZUN BASMA
         holder.itemView.setOnLongClickListener {
-            onLongClick(currentSms)
+            if (!isSelectionMode) {
+                isSelectionMode = true
+                toggleSelection(position)
+            }
             true
         }
     }
 
+    private fun toggleSelection(position: Int) {
+        smsList[position].isSelected = !smsList[position].isSelected
+        notifyItemChanged(position)
+
+        val count = smsList.count { it.isSelected }
+        onSelectionChanged(count)
+
+        if (count == 0) {
+            isSelectionMode = false
+        }
+    }
+
+    fun clearSelection() {
+        isSelectionMode = false
+        smsList.forEach { it.isSelected = false }
+        notifyDataSetChanged()
+        onSelectionChanged(0)
+    }
+
+    fun getSelectedItems(): List<SmsModel> {
+        return smsList.filter { it.isSelected }
+    }
+
     override fun getItemCount(): Int = smsList.size
 
-    // YENİ EKLENEN FONKSİYON: Pozisyona göre öğeyi getirir
+    // Swipe için gerekli
     fun getItem(position: Int): SmsModel {
         return smsList[position]
     }

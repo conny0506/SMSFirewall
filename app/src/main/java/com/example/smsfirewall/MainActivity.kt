@@ -2,6 +2,7 @@ package com.example.smsfirewall
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
@@ -13,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Telephony
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -31,8 +33,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var smsAdapter: SmsAdapter
-
-    // Çöp Kutusu veritabanı erişimi
     private val trashDao by lazy { AppDatabase.getDatabase(this).trashMessageDao() }
 
     private val smsObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
@@ -54,105 +54,152 @@ class MainActivity : AppCompatActivity() {
 
         setupRecyclerView()
 
-        // Buton Dinleyicileri
         binding.btnSpamBox.setOnClickListener { startActivity(Intent(this, SpamBoxActivity::class.java)) }
         binding.btnTrashBox.setOnClickListener { startActivity(Intent(this, TrashBoxActivity::class.java)) }
         binding.btnSetDefault.setOnClickListener { askDefaultSmsHandlerPermission() }
 
+        // SEÇİM MENÜSÜ İŞLEMLERİ
+        binding.btnCloseSelection.setOnClickListener { smsAdapter.clearSelection() }
+        binding.btnDeleteSelected.setOnClickListener {
+            val selected = smsAdapter.getSelectedItems()
+            if (selected.isNotEmpty()) {
+                showBulkDeleteDialog(selected)
+            }
+        }
+
         askNotificationPermission()
     }
 
-    override fun onResume() {
-        super.onResume()
-        checkDefaultSmsApp()
-        if (hasSmsReadPermission()) {
-            loadInboxMessages()
-            contentResolver.registerContentObserver(Uri.parse("content://sms"), true, smsObserver)
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        contentResolver.unregisterContentObserver(smsObserver)
-    }
-
     private fun setupRecyclerView() {
+        // Adaptör kurulumu + Seçim Dinleyicisi
         smsAdapter = SmsAdapter(emptyList(),
             onClick = { clickedNumber ->
                 val intent = Intent(this, ConversationDetailActivity::class.java)
                 intent.putExtra("SENDER_NUMBER", clickedNumber)
                 startActivity(intent)
+            },
+            onSelectionChanged = { count ->
+                if (count > 0) {
+                    binding.selectionHeader.visibility = View.VISIBLE
+                    binding.txtSelectionCount.text = "$count Sohbet Seçildi"
+                } else {
+                    binding.selectionHeader.visibility = View.GONE
+                }
             }
         )
         binding.recyclerSms.layoutManager = LinearLayoutManager(this)
         binding.recyclerSms.adapter = smsAdapter
 
-        // --- KAYDIRMA İLE SİLME (SWIPE TO DELETE) ---
+        // Swipe (Kaydırma) ile Silme
         val itemTouchHelperCallback = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT) {
-            override fun onMove(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean {
-                return false
-            }
-
+            override fun onMove(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean = false
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
                 val position = viewHolder.adapterPosition
-                // Adaptörden silinecek kişiyi al
                 val smsToDelete = smsAdapter.getItem(position)
-
-                // Mesajı Çöp Kutusuna taşı ve sil
                 deleteThread(smsToDelete.sender)
-
-                // Kullanıcıya bilgi ver
                 Snackbar.make(binding.root, "Sohbet Çöp Kutusuna taşındı", Snackbar.LENGTH_LONG).show()
             }
         }
         ItemTouchHelper(itemTouchHelperCallback).attachToRecyclerView(binding.recyclerSms)
     }
 
-    private fun deleteThread(sender: String) {
+    // Toplu Silme Onayı
+    private fun showBulkDeleteDialog(selectedItems: List<SmsModel>) {
+        AlertDialog.Builder(this)
+            .setTitle("Sohbetleri Sil")
+            .setMessage("${selectedItems.size} sohbet Çöp Kutusuna taşınsın mı?")
+            .setPositiveButton("Sil") { _, _ ->
+                bulkDeleteThreads(selectedItems)
+            }
+            .setNegativeButton("İptal", null)
+            .show()
+    }
+
+    // Toplu Silme Fonksiyonu
+    private fun bulkDeleteThreads(threads: List<SmsModel>) {
         lifecycleScope.launch(Dispatchers.IO) {
             try {
-                // 1. Önce silinecek mesajları telefondan oku
-                val messagesToTrash = ArrayList<TrashMessage>()
-                val cursor = contentResolver.query(
-                    Uri.parse("content://sms"),
-                    arrayOf("address", "body", "date", "type"),
-                    "address = ?",
-                    arrayOf(sender),
-                    null
-                )
+                // Her bir sohbet için yedekle ve sil
+                for (thread in threads) {
+                    // 1. O numaraya ait tüm mesajları bul
+                    val messagesToTrash = ArrayList<TrashMessage>()
+                    val cursor = contentResolver.query(
+                        Uri.parse("content://sms"),
+                        arrayOf("address", "body", "date", "type"),
+                        "address = ?",
+                        arrayOf(thread.sender),
+                        null
+                    )
 
-                if (cursor != null && cursor.moveToFirst()) {
-                    val idxBody = cursor.getColumnIndex("body")
-                    val idxDate = cursor.getColumnIndex("date")
-                    val idxType = cursor.getColumnIndex("type")
-                    do {
-                        messagesToTrash.add(TrashMessage(
-                            sender = sender,
-                            body = cursor.getString(idxBody),
-                            date = cursor.getLong(idxDate),
-                            type = cursor.getInt(idxType)
-                        ))
-                    } while (cursor.moveToNext())
-                    cursor.close()
+                    if (cursor != null && cursor.moveToFirst()) {
+                        val idxBody = cursor.getColumnIndex("body")
+                        val idxDate = cursor.getColumnIndex("date")
+                        val idxType = cursor.getColumnIndex("type")
+                        do {
+                            messagesToTrash.add(TrashMessage(
+                                sender = thread.sender,
+                                body = cursor.getString(idxBody),
+                                date = cursor.getLong(idxDate),
+                                type = cursor.getInt(idxType)
+                            ))
+                        } while (cursor.moveToNext())
+                        cursor.close()
+                    }
+
+                    // 2. Çöp Kutusuna ekle
+                    trashDao.insertAll(messagesToTrash)
+
+                    // 3. Telefondan sil
+                    contentResolver.delete(Uri.parse("content://sms"), "address = ?", arrayOf(thread.sender))
                 }
 
-                // 2. Çöp Kutusuna (Veritabanına) Kaydet
-                trashDao.insertAll(messagesToTrash)
-
-                // 3. Telefondan Sil
-                contentResolver.delete(Uri.parse("content://sms"), "address = ?", arrayOf(sender))
-
+                withContext(Dispatchers.Main) {
+                    smsAdapter.clearSelection()
+                    Toast.makeText(this@MainActivity, "Seçilenler silindi", Toast.LENGTH_SHORT).show()
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
-                // Hata olursa listeyi yenile ki silinmiş gibi görünen eleman geri gelsin
                 withContext(Dispatchers.Main) {
-                    loadInboxMessages()
-                    Toast.makeText(this@MainActivity, "Silme hatası!", Toast.LENGTH_SHORT).show()
+                    loadInboxMessages() // Hata olursa listeyi yenile
                 }
             }
         }
     }
 
+    // Tekli Silme (Swipe için)
+    private fun deleteThread(sender: String) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                val messagesToTrash = ArrayList<TrashMessage>()
+                val cursor = contentResolver.query(Uri.parse("content://sms"), arrayOf("address", "body", "date", "type"), "address = ?", arrayOf(sender), null)
+                if (cursor != null && cursor.moveToFirst()) {
+                    val idxBody = cursor.getColumnIndex("body")
+                    val idxDate = cursor.getColumnIndex("date")
+                    val idxType = cursor.getColumnIndex("type")
+                    do {
+                        messagesToTrash.add(TrashMessage(sender = sender, body = cursor.getString(idxBody), date = cursor.getLong(idxDate), type = cursor.getInt(idxType)))
+                    } while (cursor.moveToNext())
+                    cursor.close()
+                }
+                trashDao.insertAll(messagesToTrash)
+                contentResolver.delete(Uri.parse("content://sms"), "address = ?", arrayOf(sender))
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { loadInboxMessages() }
+            }
+        }
+    }
+
+    // Geri tuşu seçimi iptal etsin
+    @Deprecated("Deprecated in Java")
+    override fun onBackPressed() {
+        if (smsAdapter.isSelectionMode) {
+            smsAdapter.clearSelection()
+        } else {
+            super.onBackPressed()
+        }
+    }
+
+    // Diğer standart fonksiyonlar (izinler, loadInboxMessages vs.) aynı kalıyor
     private fun loadInboxMessages() {
         val distinctMessages = HashMap<String, SmsModel>()
         val uri = Uri.parse("content://sms/inbox")
@@ -182,6 +229,7 @@ class MainActivity : AppCompatActivity() {
         smsAdapter.updateList(distinctMessages.values.toList())
     }
 
+    // ... İzin fonksiyonları ...
     private fun askNotificationPermission() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -205,4 +253,17 @@ class MainActivity : AppCompatActivity() {
         binding.btnSetDefault.text = if (isDefault) "Varsayılan Uygulama" else "Varsayılan Yap"
     }
     private fun hasSmsReadPermission(): Boolean = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED || Telephony.Sms.getDefaultSmsPackage(this) == packageName
+
+    override fun onResume() {
+        super.onResume()
+        checkDefaultSmsApp()
+        if (hasSmsReadPermission()) {
+            loadInboxMessages()
+            contentResolver.registerContentObserver(Uri.parse("content://sms"), true, smsObserver)
+        }
+    }
+    override fun onPause() {
+        super.onPause()
+        contentResolver.unregisterContentObserver(smsObserver)
+    }
 }

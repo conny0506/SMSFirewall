@@ -1,35 +1,57 @@
 package com.example.smsfirewall
 
-import android.app.AlertDialog
+import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.smsfirewall.databinding.ActivitySpamBoxBinding
+import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.launch
 
 class SpamBoxActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivitySpamBoxBinding
     private lateinit var adapter: SmsAdapter
-    // Eğer spamMessageDao hatası alırsan Adım 4'ü tamamlayınca düzelir.
-    private val spamDao by lazy { (application as SmsApp).database.spamMessageDao() }
+    private val spamDao by lazy { AppDatabase.getDatabase(this).spamMessageDao() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivitySpamBoxBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        setupRecyclerView()
+        loadSpamMessages()
+    }
+
+    private fun setupRecyclerView() {
+        // HATA DÜZELTİLDİ: onLongClick kaldırıldı.
         adapter = SmsAdapter(emptyList(),
-            onClick = { Toast.makeText(this, "Bu bir spam mesajdır", Toast.LENGTH_SHORT).show() },
-            onLongClick = { sms -> showDeleteDialog(sms) }
+            onClick = { sender ->
+                Toast.makeText(this, "$sender'dan gelen spam", Toast.LENGTH_SHORT).show()
+            }
+            // onSelectionChanged parametresi opsiyonel olduğu için vermemize gerek yok
         )
 
         binding.recyclerSpam.layoutManager = LinearLayoutManager(this)
         binding.recyclerSpam.adapter = adapter
 
-        loadSpamMessages()
+        // --- KAYDIRARAK SİLME (SWIPE TO DELETE) ---
+        val itemTouchHelperCallback = object : ItemTouchHelper.SimpleCallback(0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT) {
+            override fun onMove(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder, target: RecyclerView.ViewHolder): Boolean = false
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                val position = viewHolder.adapterPosition
+                val spamToDelete = adapter.getItem(position)
+                deleteSpam(spamToDelete)
+                Snackbar.make(binding.root, "Spam silindi", Snackbar.LENGTH_LONG).show()
+            }
+        }
+        ItemTouchHelper(itemTouchHelperCallback).attachToRecyclerView(binding.recyclerSpam)
     }
 
     private fun loadSpamMessages() {
@@ -42,18 +64,12 @@ class SpamBoxActivity : AppCompatActivity() {
         }
     }
 
-    private fun showDeleteDialog(sms: SmsModel) {
-        AlertDialog.Builder(this)
-            .setTitle("Silinsin mi?")
-            .setMessage("Bu spam mesajı kalıcı olarak silinecek.")
-            .setPositiveButton("Evet") { _, _ ->
-                lifecycleScope.launch {
-                    val spamMsg = SpamMessage(id = sms.id.toInt(), sender = sms.sender, body = sms.messageBody, date = sms.date)
-                    spamDao.delete(spamMsg)
-                    loadSpamMessages()
-                }
-            }
-            .setNegativeButton("Hayır", null)
-            .show()
+    private fun deleteSpam(sms: SmsModel) {
+        lifecycleScope.launch {
+            // Veritabanından ID'ye göre sil
+            val spamMsg = SpamMessage(id = sms.id.toInt(), sender = sms.sender, body = sms.messageBody, date = sms.date)
+            spamDao.delete(spamMsg)
+            loadSpamMessages() // Listeyi yenile
+        }
     }
 }

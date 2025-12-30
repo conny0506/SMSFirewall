@@ -27,16 +27,17 @@ class TrashBoxActivity : AppCompatActivity() {
         setupRecyclerView()
         loadTrashMessages()
 
-        // YENİ: Çöpü Boşalt Butonu
         binding.btnEmptyTrash.setOnClickListener {
             showEmptyTrashDialog()
         }
     }
 
     private fun setupRecyclerView() {
+        // HATA DÜZELTİLDİ: onLongClick yerine onClick içinde seçenek sunuyoruz
         adapter = SmsAdapter(emptyList(),
-            onClick = { sender -> showRestoreDialog(sender) },
-            onLongClick = { sms -> showDeleteForeverDialog(sms) }
+            onClick = { sender ->
+                showActionDialog(sender)
+            }
         )
         binding.recyclerTrash.layoutManager = LinearLayoutManager(this)
         binding.recyclerTrash.adapter = adapter
@@ -55,16 +56,29 @@ class TrashBoxActivity : AppCompatActivity() {
         }
     }
 
-    // YENİ: Tümünü Silme Onay Kutusu
+    // Tıklayınca Seçenek Sun: Geri Yükle veya Kalıcı Sil
+    private fun showActionDialog(sender: String) {
+        val options = arrayOf("Geri Yükle", "Kalıcı Olarak Sil")
+        AlertDialog.Builder(this)
+            .setTitle(sender)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> showRestoreDialog(sender) // Geri Yükle
+                    1 -> showDeleteForeverDialog(sender) // Kalıcı Sil
+                }
+            }
+            .show()
+    }
+
     private fun showEmptyTrashDialog() {
         AlertDialog.Builder(this)
-            .setTitle("Çöp Kutusu Boşaltılsın mı?")
-            .setMessage("Tüm mesajlar kalıcı olarak silinecek. Bu işlem geri alınamaz.")
-            .setPositiveButton("Hepsini Sil") { _, _ ->
+            .setTitle("Çöpü Boşalt")
+            .setMessage("Tüm mesajlar kalıcı olarak silinecek.")
+            .setPositiveButton("Sil") { _, _ ->
                 lifecycleScope.launch {
-                    trashDao.deleteAll() // Tüm veritabanını temizle
-                    loadTrashMessages() // Listeyi yenile (boş olacak)
-                    Toast.makeText(this@TrashBoxActivity, "Çöp kutusu boşaltıldı", Toast.LENGTH_SHORT).show()
+                    trashDao.deleteAll()
+                    loadTrashMessages()
+                    Toast.makeText(this@TrashBoxActivity, "Temizlendi", Toast.LENGTH_SHORT).show()
                 }
             }
             .setNegativeButton("İptal", null)
@@ -72,33 +86,19 @@ class TrashBoxActivity : AppCompatActivity() {
     }
 
     private fun showRestoreDialog(sender: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Geri Yükle")
-            .setMessage("$sender sohbeti geri yüklensin mi?")
-            .setPositiveButton("Geri Yükle") { _, _ ->
-                lifecycleScope.launch {
-                    restoreThread(sender)
-                    loadTrashMessages()
-                    Toast.makeText(this@TrashBoxActivity, "Sohbet geri yüklendi", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("İptal", null)
-            .show()
+        lifecycleScope.launch {
+            restoreThread(sender)
+            loadTrashMessages()
+            Toast.makeText(this@TrashBoxActivity, "Geri Yüklendi", Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun showDeleteForeverDialog(sms: SmsModel) {
-        AlertDialog.Builder(this)
-            .setTitle("Kalıcı Olarak Sil")
-            .setMessage("Bu sohbet tamamen silinecek.")
-            .setPositiveButton("Sil") { _, _ ->
-                lifecycleScope.launch {
-                    trashDao.deleteBySender(sms.sender)
-                    loadTrashMessages()
-                    Toast.makeText(this@TrashBoxActivity, "Silindi", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("İptal", null)
-            .show()
+    private fun showDeleteForeverDialog(sender: String) {
+        lifecycleScope.launch {
+            trashDao.deleteBySender(sender)
+            loadTrashMessages()
+            Toast.makeText(this@TrashBoxActivity, "Silindi", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private suspend fun restoreThread(sender: String) {
