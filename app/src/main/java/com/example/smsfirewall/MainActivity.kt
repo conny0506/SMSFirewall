@@ -1,8 +1,10 @@
 package com.example.smsfirewall
 
 import android.Manifest
+import android.app.role.RoleManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.provider.Telephony
 import android.view.View
@@ -20,12 +22,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var smsAdapter: SmsAdapter
     private val smsList = mutableListOf<SmsModel>()
 
-    // cardDefault artık MaterialCardView türünde (Tıklama efektleri için)
     private lateinit var cardDefault: MaterialCardView
     private lateinit var btnSpamBox: MaterialCardView
 
     companion object {
         private const val PERMISSION_REQUEST_READ_SMS = 100
+        private const val ROLE_REQUEST_CODE = 101
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,12 +49,26 @@ class MainActivity : AppCompatActivity() {
         }
         recyclerSms.adapter = smsAdapter
 
-        // 3. Varsayılan Yap Kartına Tıklama Olayı (GÜNCELLENDİ)
-        // Artık içindeki butona değil, kartın kendisine tıklıyoruz.
+        // 3. Varsayılan Yap Kartına Tıklama Olayı (GÜÇLENDİRİLMİŞ VERSİYON)
         cardDefault.setOnClickListener {
-            val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
-            intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
-            startActivity(intent)
+            // Tıklandığını anlamak için mesaj göster
+            Toast.makeText(this, "İşlem başlatılıyor...", Toast.LENGTH_SHORT).show()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Android 10 (Q) ve üzeri için Modern Yöntem
+                val roleManager = getSystemService(RoleManager::class.java)
+                if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) {
+                    val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
+                    startActivityForResult(intent, ROLE_REQUEST_CODE)
+                } else {
+                    Toast.makeText(this, "Cihaz SMS rolünü desteklemiyor", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                // Eski Android sürümleri için Klasik Yöntem
+                val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
+                intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
+                startActivity(intent)
+            }
         }
 
         // 4. Spam Kutusu
@@ -67,10 +83,9 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Ekran her açıldığında varsayılan uygulama durumunu kontrol et
+        // Ekran her açıldığında kontrol et
         updateDefaultAppUI()
 
-        // İzin varsa mesajları yükle
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
             loadSms()
         }
@@ -81,10 +96,10 @@ class MainActivity : AppCompatActivity() {
         val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(this)
 
         if (defaultSmsPackage == myPackageName) {
-            // Zaten varsayılanız, uyarı kartını GİZLE
+            // Biz varsayılanız -> Kartı gizle
             cardDefault.visibility = View.GONE
         } else {
-            // Değiliz, uyarı kartını GÖSTER
+            // Değiliz -> Kartı göster
             cardDefault.visibility = View.VISIBLE
         }
     }
