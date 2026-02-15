@@ -54,6 +54,10 @@
             android:label="Spam Kutusu" />
 
         <receiver
+            android:name=".NotificationActionReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".SmsReceiver"
             android:permission="android.permission.BROADCAST_SMS"
             android:exported="true">

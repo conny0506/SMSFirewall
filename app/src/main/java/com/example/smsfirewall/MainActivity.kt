@@ -1,162 +1,148 @@
 package com.example.smsfirewall
 
 import android.Manifest
-import android.app.Activity
-import android.app.AlertDialog
-import android.app.role.RoleManager
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.database.ContentObserver
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Telephony
+import android.view.View
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.example.smsfirewall.databinding.ActivityMainBinding
+import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.card.MaterialCardView
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityMainBinding
+    private lateinit var recyclerSms: RecyclerView
     private lateinit var smsAdapter: SmsAdapter
+    private val smsList = mutableListOf<SmsModel>()
 
-    private val smsObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            if (hasSmsReadPermission()) loadInboxMessages()
-        }
+    // cardDefault artık MaterialCardView türünde (Tıklama efektleri için)
+    private lateinit var cardDefault: MaterialCardView
+    private lateinit var btnSpamBox: MaterialCardView
+
+    companion object {
+        private const val PERMISSION_REQUEST_READ_SMS = 100
     }
-
-    private val roleRequestLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if (it.resultCode == Activity.RESULT_OK) { loadInboxMessages() }
-    }
-
-    private val notificationPermissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityMainBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_main)
 
-        setupRecyclerView()
+        // 1. UI Elemanlarını Bağla
+        recyclerSms = findViewById(R.id.recyclerSms)
+        cardDefault = findViewById(R.id.cardDefault)
+        btnSpamBox = findViewById(R.id.btnSpamBox)
 
-        // Spam Kutusu Butonu
-        binding.btnSpamBox.setOnClickListener {
-            startActivity(Intent(this, SpamBoxActivity::class.java))
+        // 2. RecyclerView Ayarları
+        recyclerSms.layoutManager = LinearLayoutManager(this)
+        smsAdapter = SmsAdapter(smsList) { sms ->
+            val intent = Intent(this, ConversationDetailActivity::class.java)
+            intent.putExtra("thread_id", sms.threadId)
+            intent.putExtra("address", sms.address)
+            startActivity(intent)
         }
+        recyclerSms.adapter = smsAdapter
 
-        binding.btnSetDefault.setOnClickListener { askDefaultSmsHandlerPermission() }
-        askNotificationPermission()
-    }
-
-    override fun onResume() {
-        super.onResume()
-        checkDefaultSmsApp()
-        if (hasSmsReadPermission()) {
-            loadInboxMessages()
-            contentResolver.registerContentObserver(Uri.parse("content://sms"), true, smsObserver)
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        contentResolver.unregisterContentObserver(smsObserver)
-    }
-
-    private fun setupRecyclerView() {
-        smsAdapter = SmsAdapter(emptyList(),
-            onClick = { clickedNumber ->
-                val intent = Intent(this, ConversationDetailActivity::class.java)
-                intent.putExtra("SENDER_NUMBER", clickedNumber)
-                startActivity(intent)
-            },
-            onLongClick = { smsModel ->
-                // Uzun basınca: Tüm sohbeti sil
-                showDeleteThreadDialog(smsModel.sender)
-            }
-        )
-        binding.recyclerSms.layoutManager = LinearLayoutManager(this)
-        binding.recyclerSms.adapter = smsAdapter
-    }
-
-    private fun showDeleteThreadDialog(sender: String) {
-        AlertDialog.Builder(this)
-            .setTitle("Sohbeti Sil")
-            .setMessage("$sender ile olan tüm mesajlar silinsin mi?")
-            .setPositiveButton("Sil") { _, _ ->
-                try {
-                    // Adrese göre tüm mesajları sil
-                    contentResolver.delete(Uri.parse("content://sms"), "address = ?", arrayOf(sender))
-                    Toast.makeText(this, "Sohbet silindi", Toast.LENGTH_SHORT).show()
-                    // Observer otomatik güncelleyecek
-                } catch (e: Exception) {
-                    Toast.makeText(this, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
-                }
-            }
-            .setNegativeButton("İptal", null)
-            .show()
-    }
-
-    private fun loadInboxMessages() {
-        val distinctMessages = HashMap<String, SmsModel>()
-        val cursor = contentResolver.query(
-            Uri.parse("content://sms/inbox"),
-            arrayOf("_id", "address", "body", "date", "type"), // _id ekledik
-            null, null, "date DESC"
-        )
-
-        if (cursor != null && cursor.moveToFirst()) {
-            val idxId = cursor.getColumnIndex("_id")
-            val idxAddr = cursor.getColumnIndex("address")
-            val idxBody = cursor.getColumnIndex("body")
-            val idxDate = cursor.getColumnIndex("date")
-            val idxType = cursor.getColumnIndex("type")
-
-            do {
-                if (idxAddr >= 0) {
-                    val id = cursor.getLong(idxId)
-                    val address = cursor.getString(idxAddr)
-                    val body = cursor.getString(idxBody)
-                    val date = cursor.getLong(idxDate)
-                    val type = cursor.getInt(idxType)
-
-                    if (!distinctMessages.containsKey(address)) {
-                        distinctMessages[address] = SmsModel(id, address, body, date, type)
-                    }
-                }
-            } while (cursor.moveToNext())
-            cursor.close()
-        }
-        smsAdapter.updateList(distinctMessages.values.toList())
-    }
-
-    // İzin fonksiyonları (aynı kaldı)
-    private fun askNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-    }
-    private fun askDefaultSmsHandlerPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = getSystemService(Context.ROLE_SERVICE) as RoleManager
-            if (roleManager.isRoleAvailable(RoleManager.ROLE_SMS)) roleRequestLauncher.launch(roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS))
-        } else {
+        // 3. Varsayılan Yap Kartına Tıklama Olayı (GÜNCELLENDİ)
+        // Artık içindeki butona değil, kartın kendisine tıklıyoruz.
+        cardDefault.setOnClickListener {
             val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
             intent.putExtra(Telephony.Sms.Intents.EXTRA_PACKAGE_NAME, packageName)
             startActivity(intent)
         }
+
+        // 4. Spam Kutusu
+        btnSpamBox.setOnClickListener {
+            val intent = Intent(this, SpamBoxActivity::class.java)
+            startActivity(intent)
+        }
+
+        // 5. İzin Kontrolü
+        checkPermissions()
     }
-    private fun checkDefaultSmsApp() {
-        val isDefault = Telephony.Sms.getDefaultSmsPackage(this) == packageName
-        binding.btnSetDefault.isEnabled = !isDefault
-        binding.btnSetDefault.text = if (isDefault) "Varsayılan Uygulama" else "Varsayılan Yap"
+
+    override fun onResume() {
+        super.onResume()
+        // Ekran her açıldığında varsayılan uygulama durumunu kontrol et
+        updateDefaultAppUI()
+
+        // İzin varsa mesajları yükle
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+            loadSms()
+        }
     }
-    private fun hasSmsReadPermission(): Boolean = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED || Telephony.Sms.getDefaultSmsPackage(this) == packageName
+
+    private fun updateDefaultAppUI() {
+        val myPackageName = packageName
+        val defaultSmsPackage = Telephony.Sms.getDefaultSmsPackage(this)
+
+        if (defaultSmsPackage == myPackageName) {
+            // Zaten varsayılanız, uyarı kartını GİZLE
+            cardDefault.visibility = View.GONE
+        } else {
+            // Değiliz, uyarı kartını GÖSTER
+            cardDefault.visibility = View.VISIBLE
+        }
+    }
+
+    private fun checkPermissions() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.READ_SMS), PERMISSION_REQUEST_READ_SMS)
+        } else {
+            loadSms()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERMISSION_REQUEST_READ_SMS) {
+            if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                loadSms()
+            } else {
+                Toast.makeText(this, "SMS okuma izni gerekli!", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    private fun loadSms() {
+        smsList.clear()
+
+        val cursor = contentResolver.query(
+            Telephony.Sms.CONTENT_URI,
+            arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.THREAD_ID, Telephony.Sms.TYPE),
+            null,
+            null,
+            Telephony.Sms.DATE + " DESC"
+        )
+
+        cursor?.use {
+            val indexId = it.getColumnIndex(Telephony.Sms._ID)
+            val indexAddress = it.getColumnIndex(Telephony.Sms.ADDRESS)
+            val indexBody = it.getColumnIndex(Telephony.Sms.BODY)
+            val indexDate = it.getColumnIndex(Telephony.Sms.DATE)
+            val indexThreadId = it.getColumnIndex(Telephony.Sms.THREAD_ID)
+            val indexType = it.getColumnIndex(Telephony.Sms.TYPE)
+
+            val seenThreads = HashSet<String>()
+
+            while (it.moveToNext()) {
+                val id = it.getString(indexId)
+                val address = it.getString(indexAddress)
+                val body = it.getString(indexBody)
+                val date = it.getLong(indexDate)
+                val threadId = it.getString(indexThreadId)
+                val type = it.getInt(indexType)
+
+                if (threadId != null && !seenThreads.contains(threadId)) {
+                    smsList.add(SmsModel(id, address, body, date, type, threadId))
+                    seenThreads.add(threadId)
+                }
+            }
+        }
+        smsAdapter.notifyDataSetChanged()
+    }
 }

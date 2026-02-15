@@ -1,56 +1,47 @@
 package com.example.smsfirewall
 
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
-import androidx.recyclerview.widget.DiffUtil
+import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
-import com.example.smsfirewall.databinding.ItemSmsBinding
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SmsAdapter(
-    private var smsList: List<SmsModel>,
-    private val onClick: (String) -> Unit = {},
-    private val onLongClick: (SmsModel) -> Unit = {} // Uzun basma olayı
+    private val smsList: List<SmsModel>,
+    private val onItemClick: (SmsModel) -> Unit
 ) : RecyclerView.Adapter<SmsAdapter.SmsViewHolder>() {
 
-    class SmsViewHolder(val binding: ItemSmsBinding) : RecyclerView.ViewHolder(binding.root)
+    class SmsViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val txtSender: TextView = itemView.findViewById(R.id.txtSender)
+        val txtMessageBody: TextView = itemView.findViewById(R.id.txtMessageBody)
+        // Tarih alanı layout'ta varsa eklenebilir, şimdilik sadece temel alanlar:
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SmsViewHolder {
-        val binding = ItemSmsBinding.inflate(LayoutInflater.from(parent.context), parent, false)
-        return SmsViewHolder(binding)
+        // Yeni tasarımımız olan 'item_sms' layoutunu kullanıyoruz
+        val view = LayoutInflater.from(parent.context).inflate(R.layout.item_sms, parent, false)
+        return SmsViewHolder(view)
     }
 
     override fun onBindViewHolder(holder: SmsViewHolder, position: Int) {
-        val currentSms = smsList[position]
-        holder.binding.txtSender.text = currentSms.sender
-        holder.binding.txtMessageBody.text = currentSms.messageBody
+        val sms = smsList[position]
 
-        // Tıklama (Detay sayfasına git)
+        // Gönderen (Numara veya Rehber ismi)
+        holder.txtSender.text = sms.address
+
+        // Mesaj İçeriği (Çok uzunsa kısaltılabilir veya layout halleder)
+        holder.txtMessageBody.text = sms.body
+
+        // Tıklama Olayı
         holder.itemView.setOnClickListener {
-            onClick(currentSms.sender)
-        }
-
-        // Uzun Basma (Silme diyaloğu aç)
-        holder.itemView.setOnLongClickListener {
-            onLongClick(currentSms)
-            true
+            onItemClick(sms)
         }
     }
 
-    override fun getItemCount(): Int = smsList.size
-
-    fun updateList(newList: List<SmsModel>) {
-        val diffCallback = SmsDiffCallback(smsList, newList)
-        val diffResult = DiffUtil.calculateDiff(diffCallback)
-        smsList = newList
-        diffResult.dispatchUpdatesTo(this)
-    }
-
-    class SmsDiffCallback(private val oldList: List<SmsModel>, private val newList: List<SmsModel>) : DiffUtil.Callback() {
-        override fun getOldListSize(): Int = oldList.size
-        override fun getNewListSize(): Int = newList.size
-        override fun areItemsTheSame(oldPos: Int, newPos: Int): Boolean {
-            return oldList[oldPos].id == newList[newPos].id
-        }
-        override fun areContentsTheSame(oldPos: Int, newPos: Int): Boolean = oldList[oldPos] == newList[newPos]
+    override fun getItemCount(): Int {
+        return smsList.size
     }
 }

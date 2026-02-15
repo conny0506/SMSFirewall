@@ -1,142 +1,158 @@
 package com.example.smsfirewall
 
 import android.Manifest
-import android.content.ContentValues
+import android.content.ContentValues // <-- Bu import veritabanı yazma işlemi için gerekli
 import android.content.pm.PackageManager
-import android.database.ContentObserver
-import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.provider.Telephony
 import android.telephony.SmsManager
-import android.util.Log
+import android.widget.EditText
+import android.widget.ImageButton
+import android.widget.ImageView
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.example.smsfirewall.databinding.ActivityConversationDetailBinding
+import androidx.recyclerview.widget.RecyclerView
 
 class ConversationDetailActivity : AppCompatActivity() {
 
-    private lateinit var binding: ActivityConversationDetailBinding
+    private lateinit var recyclerChat: RecyclerView
     private lateinit var chatAdapter: ChatAdapter
-    private var senderNumber: String? = null
+    private val messageList = mutableListOf<SmsModel>()
 
-    // Canlı izleme
-    private val smsObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            super.onChange(selfChange)
-            if (senderNumber != null) loadMessagesForNumber(senderNumber!!)
-        }
-    }
+    private lateinit var etMessage: EditText
+    private lateinit var btnSend: ImageButton
+    private lateinit var headerTitle: TextView
+    private lateinit var btnBack: ImageView
+
+    private var threadId: String? = null
+    private var address: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        binding = ActivityConversationDetailBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(R.layout.activity_conversation_detail)
 
-        senderNumber = intent.getStringExtra("SENDER_NUMBER")
-        binding.headerTitle.text = senderNumber ?: "Sohbet"
+        threadId = intent.getStringExtra("thread_id")
+        address = intent.getStringExtra("address")
 
-        setupRecyclerView()
+        // UI Elemanları
+        recyclerChat = findViewById(R.id.recyclerChat)
+        etMessage = findViewById(R.id.etMessage)
+        btnSend = findViewById(R.id.btnSend)
+        headerTitle = findViewById(R.id.headerTitle)
+        btnBack = findViewById(R.id.btnBack)
 
-        // GÖNDER BUTONU
-        binding.btnSend.setOnClickListener {
-            val messageText = binding.etMessage.text.toString().trim()
-            if (messageText.isNotEmpty() && senderNumber != null) {
-                sendMessage(senderNumber!!, messageText)
-            }
-        }
-    }
+        headerTitle.text = address ?: "Bilinmeyen"
 
-    override fun onResume() {
-        super.onResume()
-        if (senderNumber != null) {
-            loadMessagesForNumber(senderNumber!!)
-            contentResolver.registerContentObserver(Uri.parse("content://sms"), true, smsObserver)
-        }
-    }
+        btnBack.setOnClickListener { finish() }
 
-    override fun onPause() {
-        super.onPause()
-        contentResolver.unregisterContentObserver(smsObserver)
-    }
-
-    private fun setupRecyclerView() {
-        // ChatAdapter oluşturulurken boş liste veriyoruz
-        chatAdapter = ChatAdapter(emptyList())
+        // RecyclerView Ayarları
         val layoutManager = LinearLayoutManager(this)
-        binding.recyclerChat.layoutManager = layoutManager
-        binding.recyclerChat.adapter = chatAdapter
-    }
+        layoutManager.stackFromEnd = true
+        recyclerChat.layoutManager = layoutManager
 
-    private fun sendMessage(destination: String, text: String) {
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.SEND_SMS) != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "SMS gönderme izni yok!", Toast.LENGTH_SHORT).show()
-            return
+        chatAdapter = ChatAdapter(messageList)
+        recyclerChat.adapter = chatAdapter
+
+        btnSend.setOnClickListener {
+            sendMessage()
         }
 
-        try {
-            val smsManager = SmsManager.getDefault()
-            smsManager.sendTextMessage(destination, null, text, null, null)
-
-            Log.d("SMS_FIREWALL", "Mesaj gönderildi: $text")
-
-            // Manuel olarak veritabanına kaydet
-            val values = ContentValues().apply {
-                put("address", destination)
-                put("body", text)
-                put("date", System.currentTimeMillis())
-                put("type", 2) // Giden mesaj
-                put("read", 1)
-            }
-            contentResolver.insert(Uri.parse("content://sms/sent"), values)
-
-            binding.etMessage.setText("")
-
-        } catch (e: Exception) {
-            Log.e("SMS_FIREWALL", "Hata: ${e.message}")
-            Toast.makeText(this, "Gönderim Hatası!", Toast.LENGTH_SHORT).show()
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+            loadMessages()
         }
     }
 
-    private fun loadMessagesForNumber(phoneNumber: String) {
-        val smsList = ArrayList<SmsModel>()
-        val uri = Uri.parse("content://sms")
+    private fun loadMessages() {
+        if (threadId == null) return
 
-        // SORGUNUN GÜNCELLENMİŞ HALİ: "_id" EKLENDİ
+        messageList.clear()
+
+        val selection = "${Telephony.Sms.THREAD_ID} = ?"
+        val selectionArgs = arrayOf(threadId)
+
         val cursor = contentResolver.query(
-            uri,
-            arrayOf("_id", "address", "body", "date", "type"),
-            "address = ?",
-            arrayOf(phoneNumber),
-            "date ASC"
+            Telephony.Sms.CONTENT_URI,
+            arrayOf(Telephony.Sms._ID, Telephony.Sms.ADDRESS, Telephony.Sms.BODY, Telephony.Sms.DATE, Telephony.Sms.TYPE),
+            selection,
+            selectionArgs,
+            Telephony.Sms.DATE + " ASC"
         )
 
-        if (cursor != null && cursor.moveToFirst()) {
-            val idxId = cursor.getColumnIndex("_id") // ID indexini al
-            val idxBody = cursor.getColumnIndex("body")
-            val idxDate = cursor.getColumnIndex("date")
-            val idxType = cursor.getColumnIndex("type")
+        cursor?.use {
+            val indexId = it.getColumnIndex(Telephony.Sms._ID)
+            val indexAddress = it.getColumnIndex(Telephony.Sms.ADDRESS)
+            val indexBody = it.getColumnIndex(Telephony.Sms.BODY)
+            val indexDate = it.getColumnIndex(Telephony.Sms.DATE)
+            val indexType = it.getColumnIndex(Telephony.Sms.TYPE)
 
-            do {
-                // ID değerini oku
-                val id = cursor.getLong(idxId)
-                val body = cursor.getString(idxBody)
-                val date = cursor.getLong(idxDate)
-                val type = cursor.getInt(idxType)
+            while (it.moveToNext()) {
+                val id = it.getString(indexId)
+                val msgAddress = it.getString(indexAddress) ?: ""
+                val body = it.getString(indexBody)
+                val date = it.getLong(indexDate)
+                val type = it.getInt(indexType)
 
-                // MODELİ YENİ YAPIYA GÖRE OLUŞTUR (İlk parametre ID)
-                smsList.add(SmsModel(id, phoneNumber, body, date, type))
+                val safeThreadId = threadId ?: "0"
 
-            } while (cursor.moveToNext())
-            cursor.close()
+                messageList.add(SmsModel(id, msgAddress, body, date, type, safeThreadId))
+            }
         }
+        chatAdapter.notifyDataSetChanged()
 
-        chatAdapter.updateList(smsList)
+        if (messageList.isNotEmpty()) {
+            recyclerChat.scrollToPosition(messageList.size - 1)
+        }
+    }
 
-        if (smsList.isNotEmpty()) {
-            binding.recyclerChat.scrollToPosition(smsList.size - 1)
+    private fun sendMessage() {
+        val messageBody = etMessage.text.toString().trim()
+
+        if (messageBody.isNotEmpty() && address != null) {
+            try {
+                // 1. SMS Gönder (Operatöre ilet)
+                val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    this.getSystemService(SmsManager::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    SmsManager.getDefault()
+                }
+
+                smsManager.sendTextMessage(address, null, messageBody, null, null)
+
+                // 2. VERİTABANINA KAYDET (EKSİK OLAN KISIM BURASIYDI)
+                // Varsayılan uygulama olduğumuz için bunu elle yapmalıyız.
+                val values = ContentValues().apply {
+                    put(Telephony.Sms.ADDRESS, address)
+                    put(Telephony.Sms.BODY, messageBody)
+                    put(Telephony.Sms.DATE, System.currentTimeMillis())
+                    put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_SENT) // Giden Mesaj Tipi
+                    put(Telephony.Sms.READ, 1) // Okundu olarak işaretle
+                }
+                contentResolver.insert(Telephony.Sms.Sent.CONTENT_URI, values)
+
+                // 3. EKRANA EKLE (Anlık Gösterim)
+                val sentSms = SmsModel(
+                    id = System.currentTimeMillis().toString(),
+                    address = address!!,
+                    body = messageBody,
+                    date = System.currentTimeMillis(),
+                    type = Telephony.Sms.MESSAGE_TYPE_SENT,
+                    threadId = threadId ?: "0"
+                )
+
+                messageList.add(sentSms)
+                chatAdapter.notifyItemInserted(messageList.size - 1)
+                recyclerChat.scrollToPosition(messageList.size - 1)
+
+                etMessage.text.clear()
+
+            } catch (e: Exception) {
+                Toast.makeText(this, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 }

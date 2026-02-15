@@ -5,18 +5,35 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import android.provider.Telephony
 
-class ChatAdapter(private var messageList: List<SmsModel>) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+class ChatAdapter(
+    private val messageList: List<SmsModel>
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
-    // Mesaj türlerini tanımlıyoruz
+    // Mesaj tiplerini belirlemek için sabitler
     private val TYPE_RECEIVED = 1
     private val TYPE_SENT = 2
 
-    // Hangi tasarımın yükleneceğine karar veren fonksiyon
+    // Gelen Mesaj ViewHolder
+    class ReceivedMessageHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val txtMessage: TextView = itemView.findViewById(R.id.txtMessage)
+    }
+
+    // Giden Mesaj ViewHolder
+    class SentMessageHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        val txtMessage: TextView = itemView.findViewById(R.id.txtMessage)
+    }
+
+    // Hangi layout'un kullanılacağını belirler (Gelen mi giden mi?)
     override fun getItemViewType(position: Int): Int {
-        // Eğer veritabanındaki type 1 ise Gelen, 2 ise Giden kabul edelim
-        // (Android SMS veritabanında 1=Inbox, 2=Sent)
-        return if (messageList[position].type == 2) TYPE_SENT else TYPE_RECEIVED
+        val message = messageList[position]
+        // Telephony.Sms.MESSAGE_TYPE_INBOX = 1, MESSAGE_TYPE_SENT = 2
+        return if (message.type == Telephony.Sms.MESSAGE_TYPE_SENT) {
+            TYPE_SENT
+        } else {
+            TYPE_RECEIVED
+        }
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
@@ -31,31 +48,15 @@ class ChatAdapter(private var messageList: List<SmsModel>) : RecyclerView.Adapte
 
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         val message = messageList[position]
+
         if (holder is SentMessageHolder) {
-            holder.bind(message)
+            holder.txtMessage.text = message.body // messageBody yerine body kullanıyoruz
         } else if (holder is ReceivedMessageHolder) {
-            holder.bind(message)
+            holder.txtMessage.text = message.body
         }
     }
 
-    override fun getItemCount(): Int = messageList.size
-
-    fun updateList(newList: List<SmsModel>) {
-        messageList = newList
-        notifyDataSetChanged()
-    }
-
-    // --- ViewHolder Sınıfları ---
-
-    class SentMessageHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        fun bind(message: SmsModel) {
-            itemView.findViewById<TextView>(R.id.txtMessage).text = message.messageBody
-        }
-    }
-
-    class ReceivedMessageHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        fun bind(message: SmsModel) {
-            itemView.findViewById<TextView>(R.id.txtMessage).text = message.messageBody
-        }
+    override fun getItemCount(): Int {
+        return messageList.size
     }
 }
