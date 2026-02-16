@@ -9,12 +9,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [BlockedWord::class, SpamMessage::class, TrustedNumber::class], version = 3, exportSchema = false)
+@Database(
+    entities = [BlockedWord::class, SpamMessage::class, TrustedNumber::class, TrashMessage::class],
+    version = 4,
+    exportSchema = false
+)
 abstract class AppDatabase : RoomDatabase() {
 
     abstract fun blockedWordDao(): BlockedWordDao
     abstract fun spamMessageDao(): SpamMessageDao
-    abstract fun trustedNumberDao(): TrustedNumberDao // YENİ
+    abstract fun trustedNumberDao(): TrustedNumberDao
+    abstract fun trashMessageDao(): TrashMessageDao
 
     companion object {
         @Volatile
@@ -36,7 +41,6 @@ abstract class AppDatabase : RoomDatabase() {
         }
     }
 
-    // Callback sınıfı aynı kalabilir (blocked words ekleyen kısım)
     private class SmsDatabaseCallback(private val context: Context) : RoomDatabase.Callback() {
         override fun onCreate(db: SupportSQLiteDatabase) {
             super.onCreate(db)

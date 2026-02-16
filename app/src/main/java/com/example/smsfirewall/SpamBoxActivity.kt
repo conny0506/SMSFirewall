@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -50,6 +49,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class SpamBoxActivity : FragmentActivity() {
 
@@ -111,25 +113,7 @@ private fun SpamBoxScreen(
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Surface(shadowElevation = 2.dp, color = MaterialTheme.colorScheme.surface) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = AppSpacing.small, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    TextButton(onClick = onBackClick) {
-                        Text("Geri")
-                    }
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text(
-                        text = "Spam Kutusu",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-            }
+            SpamTopBar(count = spamList.size, onBackClick = onBackClick)
         }
     ) { padding ->
         when {
@@ -174,6 +158,49 @@ private fun SpamBoxScreen(
 }
 
 @Composable
+private fun SpamTopBar(count: Int, onBackClick: () -> Unit) {
+    val topBrush = Brush.linearGradient(
+        listOf(MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.primary)
+    )
+
+    Surface(color = Color.Transparent) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(topBrush)
+                .padding(horizontal = AppSpacing.medium, vertical = 12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(onClick = onBackClick) {
+                    Text("Geri", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+                Text(
+                    text = "Spam Kutusu",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.White.copy(alpha = 0.2f)
+                ) {
+                    Text(
+                        text = "$count",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun SpamMessageCard(
     sms: SmsModel,
     onClick: () -> Unit
@@ -210,7 +237,7 @@ private fun SpamMessageCard(
                 )
             }
 
-            Spacer(modifier = Modifier.width(12.dp))
+            Spacer(modifier = Modifier.padding(horizontal = 6.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -229,6 +256,18 @@ private fun SpamMessageCard(
                     overflow = TextOverflow.Ellipsis
                 )
             }
+
+            Spacer(modifier = Modifier.padding(horizontal = 4.dp))
+            Text(
+                text = sms.date.toSpamTime(),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
+}
+
+private fun Long.toSpamTime(): String {
+    val format = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
+    return format.format(Date(this))
 }

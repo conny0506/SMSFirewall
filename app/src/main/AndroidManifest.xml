@@ -53,6 +53,11 @@
             android:exported="false"
             android:label="Spam Kutusu" />
 
+        <activity
+            android:name=".TrashBoxActivity"
+            android:exported="false"
+            android:label="Cop Kutusu" />
+
         <receiver
             android:name=".NotificationActionReceiver"
             android:exported="false" />
