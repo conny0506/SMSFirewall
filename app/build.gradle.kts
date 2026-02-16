@@ -1,6 +1,7 @@
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
     id("kotlin-kapt") // <--- BU SATIRI EKLE
 }
 
@@ -10,6 +11,7 @@ android {
         version = release(36)
     }
     buildFeatures {
+        compose = true
         viewBinding = true
     }
 
@@ -46,7 +48,15 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.activity)
+    implementation("androidx.activity:activity-compose:1.10.1")
     implementation(libs.androidx.constraintlayout)
+    implementation(platform("androidx.compose:compose-bom:2025.02.00"))
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.material3:material3")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
