@@ -58,6 +58,11 @@
             android:exported="false"
             android:label="Cop Kutusu" />
 
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="Ayarlar" />
+
         <receiver
             android:name=".NotificationActionReceiver"
             android:exported="false" />

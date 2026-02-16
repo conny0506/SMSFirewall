@@ -31,6 +31,7 @@ class MainActivity : FragmentActivity() {
 
     private val smsList = mutableStateListOf<SmsModel>()
     private var isDefaultSmsApp by mutableStateOf(false)
+    private var showUnreadIndicators by mutableStateOf(true)
     private var smsContentObserver: ContentObserver? = null
 
     private val requestDefaultSmsRoleLauncher = registerForActivityResult(
@@ -50,18 +51,23 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         updateDefaultAppUI()
+        showUnreadIndicators = AppSettings.isUnreadBadgesEnabled(this)
 
         setContent {
             SMSFirewallTheme {
                 MainScreen(
                     smsList = smsList,
                     isDefaultSmsApp = isDefaultSmsApp,
+                    showUnreadIndicators = showUnreadIndicators,
                     onSetDefaultClick = { requestDefaultSmsRole() },
                     onSpamClick = {
                         startActivity(Intent(this, SpamBoxActivity::class.java))
                     },
                     onTrashClick = {
                         startActivity(Intent(this, TrashBoxActivity::class.java))
+                    },
+                    onSettingsClick = {
+                        startActivity(Intent(this, SettingsActivity::class.java))
                     },
                     onConversationClick = { sms ->
                         val intent = Intent(this, ConversationDetailActivity::class.java)
@@ -92,6 +98,7 @@ class MainActivity : FragmentActivity() {
     override fun onResume() {
         super.onResume()
         updateDefaultAppUI()
+        showUnreadIndicators = AppSettings.isUnreadBadgesEnabled(this)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
             loadSms()
@@ -125,14 +132,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun updateDefaultAppUI() {
-        val packageIsDefault = Telephony.Sms.getDefaultSmsPackage(this) == packageName
-        isDefaultSmsApp = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = getSystemService(RoleManager::class.java)
-            val roleHeld = roleManager?.isRoleHeld(RoleManager.ROLE_SMS) == true
-            roleHeld || packageIsDefault
-        } else {
-            packageIsDefault
-        }
+        isDefaultSmsApp = SmsRoleUtils.isAppDefaultSmsHandler(this)
     }
 
     private fun checkPermissions() {

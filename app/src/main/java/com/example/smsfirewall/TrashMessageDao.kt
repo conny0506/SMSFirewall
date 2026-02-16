@@ -21,4 +21,13 @@ interface TrashMessageDao {
 
     @Query("DELETE FROM trash_messages WHERE id = :id")
     suspend fun deleteById(id: Long)
+
+    @Query("SELECT * FROM trash_messages WHERE threadId = :threadId ORDER BY date ASC")
+    suspend fun getByThreadId(threadId: String): List<TrashMessage>
+
+    @Query("DELETE FROM trash_messages WHERE threadId = :threadId")
+    suspend fun deleteByThreadId(threadId: String)
+
+    @Query("DELETE FROM trash_messages")
+    suspend fun deleteAll()
 }

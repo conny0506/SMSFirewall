@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
+import com.example.smsfirewall.ui.components.TopGradientBar
 import com.example.smsfirewall.ui.theme.AppSpacing
 import com.example.smsfirewall.ui.theme.AvatarRedEnd
 import com.example.smsfirewall.ui.theme.AvatarRedStart
@@ -159,45 +160,13 @@ private fun SpamBoxScreen(
 
 @Composable
 private fun SpamTopBar(count: Int, onBackClick: () -> Unit) {
-    val topBrush = Brush.linearGradient(
-        listOf(MaterialTheme.colorScheme.tertiary, MaterialTheme.colorScheme.primary)
+    TopGradientBar(
+        title = "Spam Kutusu",
+        onBackClick = onBackClick,
+        startColor = MaterialTheme.colorScheme.tertiary,
+        endColor = MaterialTheme.colorScheme.primary,
+        badgeText = count.toString()
     )
-
-    Surface(color = Color.Transparent) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(topBrush)
-                .padding(horizontal = AppSpacing.medium, vertical = 12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                TextButton(onClick = onBackClick) {
-                    Text("Geri", color = Color.White, fontWeight = FontWeight.Bold)
-                }
-                Text(
-                    text = "Spam Kutusu",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
-                Surface(
-                    shape = RoundedCornerShape(999.dp),
-                    color = Color.White.copy(alpha = 0.2f)
-                ) {
-                    Text(
-                        text = "$count",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable

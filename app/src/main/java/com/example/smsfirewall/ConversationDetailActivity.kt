@@ -67,6 +67,7 @@ import com.example.smsfirewall.ui.theme.AppSpacing
 import com.example.smsfirewall.ui.theme.ChatReceivedBubble
 import com.example.smsfirewall.ui.theme.ChatSentBubble
 import com.example.smsfirewall.ui.theme.SMSFirewallTheme
+import com.example.smsfirewall.ui.components.TopGradientBar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -79,6 +80,7 @@ class ConversationDetailActivity : FragmentActivity() {
 
     private val messageList = mutableStateListOf<SmsModel>()
     private var inputText by mutableStateOf("")
+    private var chatBackgroundKey by mutableStateOf(AppSettings.CHAT_BG_CLASSIC)
 
     private var threadId: String? = null
     private var address: String? = null
@@ -90,6 +92,7 @@ class ConversationDetailActivity : FragmentActivity() {
 
         threadId = intent.getStringExtra("thread_id")
         address = intent.getStringExtra("address")
+        chatBackgroundKey = loadSavedChatBackgroundKey()
 
         setContent {
             SMSFirewallTheme {
@@ -97,7 +100,12 @@ class ConversationDetailActivity : FragmentActivity() {
                     title = address ?: "Bilinmeyen",
                     messages = messageList,
                     inputText = inputText,
+                    chatBackgroundKey = chatBackgroundKey,
                     onInputChanged = { inputText = it },
+                    onBackgroundThemeChange = { key ->
+                        chatBackgroundKey = key
+                        saveChatBackgroundKey(key)
+                    },
                     onBackClick = { finish() },
                     onSendClick = { sendMessage() },
                     onDeleteMessage = { message -> deleteMessage(message) },
@@ -253,7 +261,7 @@ class ConversationDetailActivity : FragmentActivity() {
     }
 
     private fun deleteMessage(message: SmsModel) {
-        if (Telephony.Sms.getDefaultSmsPackage(this) != packageName) {
+        if (!SmsRoleUtils.isAppDefaultSmsHandler(this)) {
             Toast.makeText(this, "Mesaj silmek icin varsayilan SMS uygulamasi olmalisin.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -295,7 +303,7 @@ class ConversationDetailActivity : FragmentActivity() {
     }
 
     private fun deleteCurrentConversation() {
-        if (Telephony.Sms.getDefaultSmsPackage(this) != packageName) {
+        if (!SmsRoleUtils.isAppDefaultSmsHandler(this)) {
             Toast.makeText(this, "Sohbet silmek icin varsayilan SMS uygulamasi olmalisin.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -365,6 +373,15 @@ class ConversationDetailActivity : FragmentActivity() {
 
         return archived
     }
+
+    private fun loadSavedChatBackgroundKey(): String {
+        return AppSettings.getChatBackgroundKey(this)
+    }
+
+    private fun saveChatBackgroundKey(key: String) {
+        AppSettings.setChatBackgroundKey(this, key)
+    }
+
 }
 
 @Composable
@@ -372,7 +389,9 @@ private fun ConversationDetailScreen(
     title: String,
     messages: List<SmsModel>,
     inputText: String,
+    chatBackgroundKey: String,
     onInputChanged: (String) -> Unit,
+    onBackgroundThemeChange: (String) -> Unit,
     onBackClick: () -> Unit,
     onSendClick: () -> Unit,
     onDeleteMessage: (SmsModel) -> Unit,
@@ -381,6 +400,7 @@ private fun ConversationDetailScreen(
     val listState = rememberLazyListState()
     var pendingDeleteMessage by remember { mutableStateOf<SmsModel?>(null) }
     var showDeleteConversationDialog by remember { mutableStateOf(false) }
+    var showThemeDialog by remember { mutableStateOf(false) }
     var pendingDeleteMessageIds by remember { mutableStateOf(setOf<String>()) }
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -399,6 +419,7 @@ private fun ConversationDetailScreen(
             ConversationTopBar(
                 title = title,
                 onBackClick = onBackClick,
+                onThemeClick = { showThemeDialog = true },
                 onDeleteConversationClick = { showDeleteConversationDialog = true }
             )
         },
@@ -410,10 +431,23 @@ private fun ConversationDetailScreen(
             )
         }
     ) { padding ->
+        val chatBackgroundBrush = when (chatBackgroundKey) {
+            AppSettings.CHAT_BG_OCEAN -> Brush.verticalGradient(listOf(Color(0xFFEAF4FF), Color(0xFFDDEBFF)))
+            AppSettings.CHAT_BG_MINT -> Brush.verticalGradient(listOf(Color(0xFFEAFBF4), Color(0xFFDFF5EA)))
+            AppSettings.CHAT_BG_SUNSET -> Brush.verticalGradient(listOf(Color(0xFFFFF4EB), Color(0xFFFFE8DA)))
+            else -> Brush.verticalGradient(
+                listOf(
+                    MaterialTheme.colorScheme.background,
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                )
+            )
+        }
+
         if (visibleMessages.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(chatBackgroundBrush)
                     .padding(padding),
                 contentAlignment = Alignment.Center
             ) {
@@ -424,6 +458,7 @@ private fun ConversationDetailScreen(
                 state = listState,
                 modifier = Modifier
                     .fillMaxSize()
+                    .background(chatBackgroundBrush)
                     .padding(padding),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -475,6 +510,54 @@ private fun ConversationDetailScreen(
         )
     }
 
+    if (showThemeDialog) {
+        AlertDialog(
+            onDismissRequest = { showThemeDialog = false },
+            title = { Text("Sohbet Arkaplani") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ThemeOptionButton(
+                        text = "Sade",
+                        selected = chatBackgroundKey == AppSettings.CHAT_BG_CLASSIC,
+                        onClick = {
+                            onBackgroundThemeChange(AppSettings.CHAT_BG_CLASSIC)
+                            showThemeDialog = false
+                        }
+                    )
+                    ThemeOptionButton(
+                        text = "Mavi",
+                        selected = chatBackgroundKey == AppSettings.CHAT_BG_OCEAN,
+                        onClick = {
+                            onBackgroundThemeChange(AppSettings.CHAT_BG_OCEAN)
+                            showThemeDialog = false
+                        }
+                    )
+                    ThemeOptionButton(
+                        text = "Mint",
+                        selected = chatBackgroundKey == AppSettings.CHAT_BG_MINT,
+                        onClick = {
+                            onBackgroundThemeChange(AppSettings.CHAT_BG_MINT)
+                            showThemeDialog = false
+                        }
+                    )
+                    ThemeOptionButton(
+                        text = "Gunbatimi",
+                        selected = chatBackgroundKey == AppSettings.CHAT_BG_SUNSET,
+                        onClick = {
+                            onBackgroundThemeChange(AppSettings.CHAT_BG_SUNSET)
+                            showThemeDialog = false
+                        }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showThemeDialog = false }) {
+                    Text("Kapat")
+                }
+            }
+        )
+    }
+
     if (showDeleteConversationDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConversationDialog = false },
@@ -512,57 +595,33 @@ private fun ConversationDetailScreen(
 private fun ConversationTopBar(
     title: String,
     onBackClick: () -> Unit,
+    onThemeClick: () -> Unit,
     onDeleteConversationClick: () -> Unit
 ) {
-    val topBrush = Brush.linearGradient(
-        listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)
+    TopGradientBar(
+        title = title,
+        onBackClick = onBackClick,
+        startColor = MaterialTheme.colorScheme.primary,
+        endColor = MaterialTheme.colorScheme.secondary,
+        actionLabel = "Tema",
+        onActionClick = onThemeClick,
+        secondActionLabel = "Sil",
+        onSecondActionClick = onDeleteConversationClick
     )
+}
 
-    Surface(color = Color.Transparent) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(brush = topBrush)
-                .padding(horizontal = AppSpacing.medium, vertical = 12.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Button(
-                    onClick = onBackClick,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.2f),
-                        contentColor = Color.White
-                    ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text("Geri", fontWeight = FontWeight.Bold)
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Button(
-                    onClick = onDeleteConversationClick,
-                    shape = RoundedCornerShape(14.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White.copy(alpha = 0.2f),
-                        contentColor = Color.White
-                    ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
-                ) {
-                    Text("Sil", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
+@Composable
+private fun ThemeOptionButton(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Button(
+        onClick = onClick,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Text(if (selected) "$text (Secili)" else text)
     }
 }
 
@@ -628,7 +687,7 @@ private fun MessageBubble(
 ) {
     val isSent = message.type == Telephony.Sms.MESSAGE_TYPE_SENT
     val rowAlignment = if (isSent) Arrangement.End else Arrangement.Start
-    val bubbleColor = if (isSent) ChatSentBubble else MaterialTheme.colorScheme.surface
+    val bubbleColor = if (isSent) ChatSentBubble else ChatReceivedBubble
     val textColor = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface
     val bubbleShape = if (isSent) {
         RoundedCornerShape(topStart = 18.dp, topEnd = 6.dp, bottomStart = 18.dp, bottomEnd = 18.dp)

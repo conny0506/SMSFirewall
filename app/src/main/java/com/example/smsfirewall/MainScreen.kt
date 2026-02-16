@@ -64,9 +64,11 @@ import kotlinx.coroutines.launch
 fun MainScreen(
     smsList: List<SmsModel>,
     isDefaultSmsApp: Boolean,
+    showUnreadIndicators: Boolean,
     onSetDefaultClick: () -> Unit,
     onSpamClick: () -> Unit,
     onTrashClick: () -> Unit,
+    onSettingsClick: () -> Unit,
     onConversationClick: (SmsModel) -> Unit,
     onDeleteConversationClick: (SmsModel) -> Unit
 ) {
@@ -75,7 +77,7 @@ fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val visibleSmsList = smsList.filterNot { it.threadId in pendingDeleteThreadIds }
-    val unreadTotal = visibleSmsList.sumOf { it.unreadCount }
+    val unreadTotal = if (showUnreadIndicators) visibleSmsList.sumOf { it.unreadCount } else 0
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -93,7 +95,8 @@ fun MainScreen(
                 threadCount = visibleSmsList.size,
                 unreadCount = unreadTotal,
                 onSpamClick = onSpamClick,
-                onTrashClick = onTrashClick
+                onTrashClick = onTrashClick,
+                onSettingsClick = onSettingsClick
             )
 
             Spacer(modifier = Modifier.height(AppSpacing.large))
@@ -114,6 +117,7 @@ fun MainScreen(
                     items(visibleSmsList, key = { it.threadId }) { sms ->
                         SmsConversationCard(
                             sms = sms,
+                            showUnreadIndicators = showUnreadIndicators,
                             onClick = { onConversationClick(sms) },
                             onDeleteClick = { pendingDelete = sms }
                         )
@@ -166,7 +170,8 @@ private fun MainHeroHeader(
     threadCount: Int,
     unreadCount: Int,
     onSpamClick: () -> Unit,
-    onTrashClick: () -> Unit
+    onTrashClick: () -> Unit,
+    onSettingsClick: () -> Unit
 ) {
     val heroBrush = Brush.linearGradient(
         colors = listOf(
@@ -233,6 +238,9 @@ private fun MainHeroHeader(
                 }
                 FilledTonalButton(onClick = onSpamClick) {
                     Text(text = "Spam", fontWeight = FontWeight.Bold)
+                }
+                FilledTonalButton(onClick = onSettingsClick) {
+                    Text(text = "⚙ Ayarlar", fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -309,10 +317,11 @@ private fun DefaultAppWarningCard(onClick: () -> Unit) {
 @Composable
 private fun SmsConversationCard(
     sms: SmsModel,
+    showUnreadIndicators: Boolean,
     onClick: () -> Unit,
     onDeleteClick: () -> Unit
 ) {
-    val hasUnread = sms.unreadCount > 0
+    val hasUnread = showUnreadIndicators && sms.unreadCount > 0
     Card(
         modifier = Modifier
             .fillMaxWidth()
