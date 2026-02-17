@@ -1,21 +1,57 @@
-SMS Firewall is a native Android application developed using Kotlin and Android Studio. Designed to enhance user privacy, this application serves as a complete replacement for the stock Android "Messages" app, functioning as the device's Default SMS Handler.
+# SMSFirewall
 
-The primary goal of this project is to combat unsolicited spam and advertisement messages. By intercepting incoming SMS traffic, the application analyzes message content in real-time and automatically filters out spam based on specific keywords (e.g., "Bet", "Casino", "Promotion", "Metin2").
+SMSFirewall, Kotlin ile gelistirilmis bir Android SMS uygulamasidir. Uygulama, cihazda varsayilan SMS uygulamasi olarak calisacak sekilde tasarlanmistir ve gelen mesajlari filtreleyerek spam/istenmeyen icerikleri ayirir.
 
-Key Features:
-Default SMS Handler: Fully replaces the native messaging app to gain full control over SMS reception and database management.
+## Ozellikler
 
-Smart Content Filtering: Automatically detects and blocks messages containing keywords related to illegal gambling, betting, and aggressive marketing.
+- Varsayilan SMS uygulamasi olarak calisabilme
+- Ana mesaj kutusu, spam kutusu ve cop kutusu ekranlari
+- Anahtar kelime tabanli mesaj filtreleme
+- Guvenilir numara (trusted numbers) yonetimi
+- Room veritabani ile yerel veri saklama
+- Jetpack Compose tabanli arayuz bilesenleri
 
-Native Performance: Built entirely with Kotlin for optimal performance and system integration on Android devices.
+## Teknolojiler
 
-User-Friendly Interface: A clean interface for viewing legitimate messages while keeping the spam folder separate.
+- Kotlin
+- Android Studio
+- Jetpack Compose
+- Room
+- Android BroadcastReceiver / Service yapilari
 
-Tech Stack
-Language: Kotlin
+## Gereksinimler
 
-IDE: Android Studio
+- Android Studio (guncel surum)
+- JDK 11
+- Android SDK (proje `compileSdk = 36`, `targetSdk = 36`, `minSdk = 24`)
 
-Architecture: MVVM (Model-View-ViewModel)
+## Kurulum ve Calistirma
 
-Components: Broadcast Receivers, Content Providers, Services.
+1. Projeyi Android Studio ile acin.
+2. Gradle senkronizasyonunun tamamlanmasini bekleyin.
+3. Bir emulator veya fiziksel cihaz secin.
+4. Uygulamayi calistirin.
+5. Ilk acilista gerekli izinleri verin ve istenirse uygulamayi varsayilan SMS uygulamasi olarak atayin.
+
+## Izinler
+
+`AndroidManifest.xml` icerisinde temel olarak su izinler kullanilir:
+
+- `READ_SMS`
+- `SEND_SMS`
+- `RECEIVE_SMS`
+- `RECEIVE_MMS`
+- `WRITE_SMS`
+- `POST_NOTIFICATIONS`
+
+## Proje Yapisi (Kisa)
+
+- `app/src/main/java/com/example/smsfirewall`: Uygulama kaynak kodlari
+- `app/src/main/res`: UI kaynaklari (tema, drawable, string vb.)
+- `app/src/main/AndroidManifest.xml`: Manifest ve component tanimlari
+- `app/build.gradle.kts`: Modul bagimliliklari ve Android ayarlari
+
+## Notlar
+
+- Uygulamanin SMS alma/gonderme davranisi Android surumune ve cihaz ureticisine gore farklilik gosterebilir.
+- Uretim ortami icin filtreleme mantigini ve anahtar kelime listesini ihtiyaca gore gelistirmeniz onerilir.
