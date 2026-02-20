@@ -59,21 +59,20 @@ class MainActivity : FragmentActivity() {
                     smsList = smsList,
                     isDefaultSmsApp = isDefaultSmsApp,
                     showUnreadIndicators = showUnreadIndicators,
+                    onStartChatClick = { address ->
+                        val intent = Intent(this, ConversationDetailActivity::class.java)
+                        intent.putExtra("address", address)
+                        startActivity(intent)
+                    },
                     onSetDefaultClick = { requestDefaultSmsRole() },
-                    onSpamClick = {
-                        startActivity(Intent(this, SpamBoxActivity::class.java))
-                    },
-                    onTrashClick = {
-                        startActivity(Intent(this, TrashBoxActivity::class.java))
-                    },
-                    onSettingsClick = {
-                        startActivity(Intent(this, SettingsActivity::class.java))
-                    },
                     onConversationClick = { sms ->
                         val intent = Intent(this, ConversationDetailActivity::class.java)
                         intent.putExtra("thread_id", sms.threadId)
                         intent.putExtra("address", sms.address)
                         startActivity(intent)
+                    },
+                    onBulkDeleteConversationsClick = { selectedConversations ->
+                        deleteConversations(selectedConversations)
                     },
                     onDeleteConversationClick = { sms ->
                         deleteConversation(sms)
@@ -149,7 +148,7 @@ class MainActivity : FragmentActivity() {
             if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 loadSms()
             } else {
-                Toast.makeText(this, "SMS okuma izni gerekli!", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_read_sms_permission_required), Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -161,7 +160,7 @@ class MainActivity : FragmentActivity() {
                 val intent = roleManager.createRequestRoleIntent(RoleManager.ROLE_SMS)
                 requestDefaultSmsRoleLauncher.launch(intent)
             } else {
-                Toast.makeText(this, "Cihaz SMS rolunu desteklemiyor", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, getString(R.string.toast_sms_role_not_supported), Toast.LENGTH_SHORT).show()
             }
         } else {
             val intent = Intent(Telephony.Sms.Intents.ACTION_CHANGE_DEFAULT)
@@ -172,7 +171,7 @@ class MainActivity : FragmentActivity() {
 
     private fun deleteConversation(sms: SmsModel) {
         if (!isDefaultSmsApp) {
-            Toast.makeText(this, "Mesaj silmek icin varsayilan SMS uygulamasi olmalisin.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_conversation_delete_requires_default_sms), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -190,9 +189,53 @@ class MainActivity : FragmentActivity() {
             withContext(Dispatchers.Main) {
                 if (deletedRows > 0) {
                     smsList.removeAll { it.threadId == sms.threadId }
-                    Toast.makeText(this@MainActivity, "Sohbet silindi", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, getString(R.string.toast_conversation_deleted), Toast.LENGTH_SHORT).show()
                 } else {
-                    Toast.makeText(this@MainActivity, "Silinecek mesaj bulunamadi", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@MainActivity, getString(R.string.toast_no_message_to_delete), Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun deleteConversations(conversations: List<SmsModel>) {
+        if (conversations.isEmpty()) return
+        if (!isDefaultSmsApp) {
+            Toast.makeText(this, getString(R.string.toast_conversation_delete_requires_default_sms), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val selectedThreadIds = conversations.map { it.threadId }.toSet()
+        CoroutineScope(Dispatchers.IO).launch {
+            var deletedThreadCount = 0
+            for (sms in conversations) {
+                val trashItems = queryThreadMessagesForTrash(sms.threadId)
+                val deletedRows = contentResolver.delete(
+                    Telephony.Sms.CONTENT_URI,
+                    "${Telephony.Sms.THREAD_ID} = ?",
+                    arrayOf(sms.threadId)
+                )
+                if (deletedRows > 0) {
+                    deletedThreadCount++
+                    if (trashItems.isNotEmpty()) {
+                        AppDatabase.getDatabase(applicationContext).trashMessageDao().insertAll(trashItems)
+                    }
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                if (deletedThreadCount > 0) {
+                    smsList.removeAll { it.threadId in selectedThreadIds }
+                    Toast.makeText(
+                        this@MainActivity,
+                        resources.getQuantityString(
+                            R.plurals.toast_bulk_conversation_deleted_count,
+                            deletedThreadCount,
+                            deletedThreadCount
+                        ),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Toast.makeText(this@MainActivity, getString(R.string.toast_no_message_to_delete), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -227,7 +270,7 @@ class MainActivity : FragmentActivity() {
                 archived.add(
                     TrashMessage(
                         originalSmsId = it.getString(idIdx) ?: "",
-                        sender = it.getString(addressIdx) ?: "Bilinmeyen",
+                        sender = it.getString(addressIdx) ?: getString(R.string.label_unknown_sender),
                         body = it.getString(bodyIdx) ?: "",
                         date = it.getLong(dateIdx),
                         type = it.getInt(typeIdx),
@@ -272,7 +315,7 @@ class MainActivity : FragmentActivity() {
 
                 while (it.moveToNext()) {
                     val id = it.getString(indexId)
-                    val address = it.getString(indexAddress) ?: "Bilinmeyen"
+                    val address = it.getString(indexAddress) ?: getString(R.string.label_unknown_sender)
                     val body = it.getString(indexBody) ?: ""
                     val date = it.getLong(indexDate)
                     val threadId = it.getString(indexThreadId)

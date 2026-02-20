@@ -1,4 +1,4 @@
-package com.example.smsfirewall
+﻿package com.example.smsfirewall
 
 import android.os.Bundle
 import android.widget.Toast
@@ -27,7 +27,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -37,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,13 +46,13 @@ import com.example.smsfirewall.ui.theme.AppSpacing
 import com.example.smsfirewall.ui.theme.AvatarRedEnd
 import com.example.smsfirewall.ui.theme.AvatarRedStart
 import com.example.smsfirewall.ui.theme.SMSFirewallTheme
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class SpamBoxActivity : FragmentActivity() {
 
@@ -70,7 +70,11 @@ class SpamBoxActivity : FragmentActivity() {
                     isLoading = isLoading,
                     onBackClick = { finish() },
                     onItemClick = { sms ->
-                        Toast.makeText(this, "Spam Icerigi: ${sms.body}", Toast.LENGTH_LONG).show()
+                        Toast.makeText(
+                            this,
+                            getString(R.string.toast_spam_content, sms.body),
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
                 )
             }
@@ -117,40 +121,44 @@ private fun SpamBoxScreen(
             SpamTopBar(count = spamList.size, onBackClick = onBackClick)
         }
     ) { padding ->
-        when {
-            isLoading -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Yukleniyor...", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(horizontal = AppSpacing.large)
+        ) {
+            Spacer(modifier = Modifier.height(10.dp))
+            SpamSummaryCard(spamCount = spamList.size)
+            Spacer(modifier = Modifier.height(10.dp))
 
-            spamList.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text("Henuz spam mesaj yok", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            when {
+                isLoading -> {
+                    StatusStateCard(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(R.string.label_loading),
+                        subtitle = stringResource(R.string.label_spam_loading_desc)
+                    )
                 }
-            }
 
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .padding(horizontal = AppSpacing.large),
-                    contentPadding = PaddingValues(vertical = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(spamList, key = { it.threadId }) { sms ->
-                        SpamMessageCard(sms = sms, onClick = { onItemClick(sms) })
+                spamList.isEmpty() -> {
+                    StatusStateCard(
+                        modifier = Modifier.weight(1f),
+                        title = stringResource(R.string.label_no_spam),
+                        subtitle = stringResource(R.string.label_spam_empty_desc)
+                    )
+                }
+
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f),
+                        contentPadding = PaddingValues(bottom = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(spamList, key = { it.threadId }) { sms ->
+                            SpamMessageCard(sms = sms, onClick = { onItemClick(sms) })
+                        }
                     }
                 }
             }
@@ -159,9 +167,91 @@ private fun SpamBoxScreen(
 }
 
 @Composable
+private fun SpamSummaryCard(spamCount: Int) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = stringResource(R.string.label_spam_summary_title),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = stringResource(R.string.label_spam_summary_subtitle),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Text(
+                    text = spamCount.toString(),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatusStateCard(
+    modifier: Modifier = Modifier,
+    title: String,
+    subtitle: String
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth(),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(46.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(text = title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+@Composable
 private fun SpamTopBar(count: Int, onBackClick: () -> Unit) {
     TopGradientBar(
-        title = "Spam Kutusu",
+        title = stringResource(R.string.activity_spam_box_label),
         onBackClick = onBackClick,
         startColor = MaterialTheme.colorScheme.tertiary,
         endColor = MaterialTheme.colorScheme.primary,
@@ -206,7 +296,7 @@ private fun SpamMessageCard(
                 )
             }
 
-            Spacer(modifier = Modifier.padding(horizontal = 6.dp))
+            Spacer(modifier = Modifier.size(10.dp))
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -226,7 +316,7 @@ private fun SpamMessageCard(
                 )
             }
 
-            Spacer(modifier = Modifier.padding(horizontal = 4.dp))
+            Spacer(modifier = Modifier.size(8.dp))
             Text(
                 text = sms.date.toSpamTime(),
                 style = MaterialTheme.typography.labelMedium,

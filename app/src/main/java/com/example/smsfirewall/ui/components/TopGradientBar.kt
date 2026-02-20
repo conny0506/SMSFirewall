@@ -16,9 +16,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.smsfirewall.R
 import com.example.smsfirewall.ui.theme.AppSpacing
 
 @Composable
@@ -53,7 +55,7 @@ fun TopGradientBar(
                     contentColor = Color.White
                 )
             ) {
-                Text("Geri", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.action_back), fontWeight = FontWeight.Bold)
             }
 
             Text(

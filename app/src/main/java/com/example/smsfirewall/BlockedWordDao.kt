@@ -1,4 +1,4 @@
-package com.example.smsfirewall
+﻿package com.example.smsfirewall
 
 import androidx.room.Dao
 import androidx.room.Delete
@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface BlockedWordDao {
 
-    // Yeni bir yasaklı kelime ekle
+    // Yeni bir yasakli kelime ekle
     @Insert
     suspend fun insert(blockedWord: BlockedWord)
 
@@ -17,12 +17,12 @@ interface BlockedWordDao {
     @Delete
     suspend fun delete(blockedWord: BlockedWord)
 
-    // Tüm yasaklı kelimeleri getir (Canlı veri olarak)
-    // Flow: Liste değiştiği an uygulamaya haber veren modern bir yöntemdir.
+    // Tum yasakli kelimeleri getir (Canli veri olarak)
+    // Flow: Liste degistigi an uygulamaya haber veren modern bir yontemdir.
     @Query("SELECT * FROM blocked_words_table ORDER BY id DESC")
     fun getAllWords(): Flow<List<BlockedWord>>
 
-    // Kelime listesini normal liste olarak al (Receiver için lazım olacak)
+    // Kelime listesini normal liste olarak al (Receiver icin lazim olacak)
     @Query("SELECT word FROM blocked_words_table")
     suspend fun getWordListRaw(): List<String>
 }

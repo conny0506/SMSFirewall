@@ -1,4 +1,4 @@
-package com.example.smsfirewall
+﻿package com.example.smsfirewall
 
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -18,56 +18,59 @@ import kotlinx.coroutines.launch
 class SmsReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        // Sadece varsayılan SMS uygulamasıyken gelen mesajları dinle
+        // Sadece varsayilan SMS uygulamasiyken gelen mesajlari dinle
         if (intent.action == Telephony.Sms.Intents.SMS_DELIVER_ACTION) {
 
-            // İşlemi arka planda yapacağımızı sisteme bildiriyoruz (Sistem receiver'ı öldürmesin diye)
+            // Islemi arka planda yapacagimizi sisteme bildiriyoruz (Sistem receiver'i oldurmesin diye)
             val pendingResult = goAsync()
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    // Veritabanı bağlantısını burada, güvenli alanda açıyoruz
+                    // Veritabani baglantisini burada, guvenli alanda aciyoruz
                     val db = AppDatabase.getDatabase(context)
                     val blockedDao = db.blockedWordDao()
                     val spamDao = db.spamMessageDao()
 
-                    // Mesaj parçalarını al
+                    // Mesaj parcalarini al
                     val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
 
                     if (messages.isNotEmpty()) {
-                        // 1. ÖNEMLİ DÜZELTME: Parçalı mesajları birleştir
+                        // Parcali mesajlari birlestir
                         val fullMessageBody = StringBuilder()
                         for (sms in messages) {
                             sms.messageBody?.let { fullMessageBody.append(it) }
                         }
 
-                        // İlk parçadan gönderen bilgisini ve zamanı al (hepsi aynıdır)
-                        val sender = messages[0].originatingAddress ?: "Bilinmeyen"
+                        // Ilk parcadan gonderen bilgisini ve zamani al (hepsi aynidir)
+                        val sender = messages[0].originatingAddress ?: context.getString(R.string.label_unknown_sender)
                         val timestamp = messages[0].timestampMillis
                         val messageContent = fullMessageBody.toString()
 
-                        // Spam Kontrolü (Kelime listesini çek)
+                        // Spam Kontrolu (Kelime listesini cek)
                         val blockedWords = blockedDao.getWordListRaw()
                         val isSpam = blockedWords.any { messageContent.lowercase().contains(it.lowercase()) }
 
                         if (isSpam) {
-                            Log.d("SMS_FIREWALL", "🚫 SPAM YAKALANDI: $sender")
-                            // Spam ise özel tabloya kaydet
+                            if (BuildConfig.DEBUG) {
+                                Log.d("SMS_FIREWALL", "SPAM YAKALANDI: $sender")
+                            }
+                            // Spam ise ozel tabloya kaydet
                             spamDao.insert(SpamMessage(sender = sender, body = messageContent, date = timestamp))
-                            // Inbox'a kaydetmiyoruz, böylece ana ekrana düşmüyor.
+                            // Inbox'a kaydetmiyoruz, boylece ana ekrana dusmuyor.
                         } else {
-                            // Temiz mesaj: Sistemin Inbox'ına kaydet
+                            // Temiz mesaj: Sistemin Inbox'ina kaydet
                             saveSmsToDeviceInbox(context, sender, messageContent, timestamp)
 
-                            // Kullanıcıya bildirim göster
+                            // Kullaniciya bildirim goster
                             showNotification(context, sender, messageContent)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("SMS_FIREWALL", "Receiver Hatası: ${e.message}")
-                    e.printStackTrace()
+                    if (BuildConfig.DEBUG) {
+                        Log.e("SMS_FIREWALL", "Receiver Hatasi: ${e.message}", e)
+                    }
                 } finally {
-                    // İşlem bitti, sistemi serbest bırak
+                    // Islem bitti, sistemi serbest birak
                     pendingResult.finish()
                 }
             }
@@ -80,32 +83,37 @@ class SmsReceiver : BroadcastReceiver() {
                 put(Telephony.Sms.ADDRESS, sender)
                 put(Telephony.Sms.BODY, body)
                 put(Telephony.Sms.DATE, date)
-                put(Telephony.Sms.READ, 0) // 0 = Okunmadı
+                put(Telephony.Sms.READ, 0) // 0 = Okunmadi
                 put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX) // Gelen Kutusu
-                // Not: thread_id vermiyoruz, Android otomatik eşleştiriyor.
+                // Not: thread_id vermiyoruz, Android otomatik eslestiriyor.
             }
 
-            // İçerik sağlayıcı (ContentResolver) aracılığıyla SMS veritabanına yaz
+            // Icerik saglayici (ContentResolver) araciligiyla SMS veritabanina yaz
             val uri = context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
-            Log.d("SMS_FIREWALL", "Mesaj Inbox'a kaydedildi: $uri")
+            if (BuildConfig.DEBUG) {
+                Log.d("SMS_FIREWALL", "Mesaj Inbox'a kaydedildi: $uri")
+            }
 
         } catch (e: Exception) {
-            Log.e("SMS_FIREWALL", "Mesaj kaydetme hatası: ${e.message}")
+            if (BuildConfig.DEBUG) {
+                Log.e("SMS_FIREWALL", "Mesaj kaydetme hatasi: ${e.message}", e)
+            }
         }
     }
 
     private fun showNotification(context: Context, sender: String, body: String) {
         val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "sms_channel_id"
+        val showContent = AppSettings.isNotificationContentVisible(context)
 
-        // Bildirim kanalı oluştur (Android 8.0+ için zorunlu)
+        // Bildirim kanali olustur (Android 8.0+ icin zorunlu)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = android.app.NotificationChannel(
                 channelId,
-                "Gelen Mesajlar",
+                context.getString(R.string.notification_channel_inbox_name),
                 NotificationManager.IMPORTANCE_HIGH
             )
-            channel.description = "Gelen SMS bildirimleri"
+            channel.description = context.getString(R.string.notification_channel_inbox_description)
             channel.enableLights(true)
             channel.lightColor = Color.BLUE
             notificationManager.createNotificationChannel(channel)
@@ -116,16 +124,25 @@ class SmsReceiver : BroadcastReceiver() {
 
         val pendingIntent = PendingIntent.getActivity(
             context,
-            System.currentTimeMillis().toInt(), // Benzersiz RequestCode
+            System.currentTimeMillis().toInt(),
             intent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
 
+        val contentTitle = if (showContent) sender else context.getString(R.string.label_new_message)
+        val contentText = if (showContent) body else context.getString(R.string.label_new_message)
+        val visibility = if (showContent) {
+            NotificationCompat.VISIBILITY_PRIVATE
+        } else {
+            NotificationCompat.VISIBILITY_SECRET
+        }
+
         val notification = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(android.R.drawable.sym_action_chat) // Kendi ikonunu (R.drawable.ic_notification) koyabilirsin
-            .setContentTitle(sender)
-            .setContentText(body)
+            .setSmallIcon(android.R.drawable.sym_action_chat)
+            .setContentTitle(contentTitle)
+            .setContentText(contentText)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(visibility)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)
             .build()

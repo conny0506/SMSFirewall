@@ -28,10 +28,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -48,6 +50,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -58,6 +62,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +74,9 @@ import com.example.smsfirewall.ui.theme.ChatReceivedBubble
 import com.example.smsfirewall.ui.theme.ChatSentBubble
 import com.example.smsfirewall.ui.theme.SMSFirewallTheme
 import com.example.smsfirewall.ui.components.TopGradientBar
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -97,7 +106,7 @@ class ConversationDetailActivity : FragmentActivity() {
         setContent {
             SMSFirewallTheme {
                 ConversationDetailScreen(
-                    title = address ?: "Bilinmeyen",
+                    title = address ?: getString(R.string.label_unknown_sender),
                     messages = messageList,
                     inputText = inputText,
                     chatBackgroundKey = chatBackgroundKey,
@@ -256,13 +265,17 @@ class ConversationDetailActivity : FragmentActivity() {
 
             inputText = ""
         } catch (e: Exception) {
-            Toast.makeText(this, "Hata: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                getString(R.string.toast_error_with_message, e.message ?: ""),
+                Toast.LENGTH_SHORT
+            ).show()
         }
     }
 
     private fun deleteMessage(message: SmsModel) {
         if (!SmsRoleUtils.isAppDefaultSmsHandler(this)) {
-            Toast.makeText(this, "Mesaj silmek icin varsayilan SMS uygulamasi olmalisin.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_delete_requires_default_sms), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -296,7 +309,7 @@ class ConversationDetailActivity : FragmentActivity() {
                 if (deletedRows > 0) {
                     messageList.removeAll { it.id == message.id }
                 } else {
-                    Toast.makeText(this@ConversationDetailActivity, "Mesaj silinemedi", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@ConversationDetailActivity, getString(R.string.toast_message_delete_failed), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -304,7 +317,7 @@ class ConversationDetailActivity : FragmentActivity() {
 
     private fun deleteCurrentConversation() {
         if (!SmsRoleUtils.isAppDefaultSmsHandler(this)) {
-            Toast.makeText(this, "Sohbet silmek icin varsayilan SMS uygulamasi olmalisin.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, getString(R.string.toast_conversation_delete_requires_default_sms), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -325,7 +338,7 @@ class ConversationDetailActivity : FragmentActivity() {
                 if (deletedRows > 0) {
                     finish()
                 } else {
-                    Toast.makeText(this@ConversationDetailActivity, "Silinecek mesaj bulunamadi", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this@ConversationDetailActivity, getString(R.string.toast_no_message_to_delete), Toast.LENGTH_SHORT).show()
                 }
             }
         }
@@ -360,7 +373,7 @@ class ConversationDetailActivity : FragmentActivity() {
                 archived.add(
                     TrashMessage(
                         originalSmsId = it.getString(idIdx) ?: "",
-                        sender = it.getString(addressIdx) ?: "Bilinmeyen",
+                        sender = it.getString(addressIdx) ?: getString(R.string.label_unknown_sender),
                         body = it.getString(bodyIdx) ?: "",
                         date = it.getLong(dateIdx),
                         type = it.getInt(typeIdx),
@@ -405,6 +418,10 @@ private fun ConversationDetailScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
     val visibleMessages = messages.filterNot { it.id in pendingDeleteMessageIds }
+    val chatRows = remember(visibleMessages) { buildChatRows(visibleMessages) }
+    val undoLabel = stringResource(R.string.action_undo)
+    val messageDeletedLabel = stringResource(R.string.snackbar_message_deleted)
+    val conversationWillDeleteLabel = stringResource(R.string.snackbar_conversation_will_delete)
 
     LaunchedEffect(visibleMessages.size) {
         if (visibleMessages.isNotEmpty()) {
@@ -443,31 +460,37 @@ private fun ConversationDetailScreen(
             )
         }
 
-        if (visibleMessages.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(chatBackgroundBrush)
-                    .padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Text("Mesaj bulunamadi", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxSize()
+                .background(chatBackgroundBrush)
+                .padding(padding),
+            contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                ConversationSummaryStrip(
+                    messageCount = visibleMessages.size,
+                    themeKey = chatBackgroundKey
+                )
             }
-        } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(chatBackgroundBrush)
-                    .padding(padding),
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                items(visibleMessages, key = { it.id + it.date }) { message ->
-                    MessageBubble(
-                        message = message,
-                        onLongPress = { pendingDeleteMessage = message }
-                    )
+
+            if (visibleMessages.isEmpty()) {
+                item {
+                    ConversationEmptyCard()
+                }
+            } else {
+                items(chatRows, key = { it.key }) { row ->
+                    when (row) {
+                        is ChatRow.DayHeader -> DayHeaderChip(text = row.label)
+                        is ChatRow.MessageRow -> {
+                            MessageBubble(
+                                message = row.message,
+                                onLongPress = { pendingDeleteMessage = row.message }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -476,8 +499,8 @@ private fun ConversationDetailScreen(
     pendingDeleteMessage?.let { selected ->
         AlertDialog(
             onDismissRequest = { pendingDeleteMessage = null },
-            title = { Text("Mesaj silinsin mi?") },
-            text = { Text(selected.body.ifBlank { "(Bos mesaj)" }) },
+            title = { Text(stringResource(R.string.label_delete_message_prompt)) },
+            text = { Text(selected.body.ifBlank { stringResource(R.string.label_empty_message) }) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -487,8 +510,8 @@ private fun ConversationDetailScreen(
                         coroutineScope.launch {
                             val result = showSnackbarForThreeSeconds(
                                 snackbarHostState = snackbarHostState,
-                                message = "Mesaj silindi",
-                                actionLabel = "Geri al"
+                                message = messageDeletedLabel,
+                                actionLabel = undoLabel
                             )
                             if (result == SnackbarResult.ActionPerformed) {
                                 pendingDeleteMessageIds = pendingDeleteMessageIds - selected.id
@@ -499,12 +522,12 @@ private fun ConversationDetailScreen(
                         }
                     }
                 ) {
-                    Text("Sil")
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteMessage = null }) {
-                    Text("Iptal")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
@@ -513,11 +536,11 @@ private fun ConversationDetailScreen(
     if (showThemeDialog) {
         AlertDialog(
             onDismissRequest = { showThemeDialog = false },
-            title = { Text("Sohbet Arkaplani") },
+            title = { Text(stringResource(R.string.label_theme)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ThemeOptionButton(
-                        text = "Sade",
+                        text = stringResource(R.string.label_theme_classic),
                         selected = chatBackgroundKey == AppSettings.CHAT_BG_CLASSIC,
                         onClick = {
                             onBackgroundThemeChange(AppSettings.CHAT_BG_CLASSIC)
@@ -525,7 +548,7 @@ private fun ConversationDetailScreen(
                         }
                     )
                     ThemeOptionButton(
-                        text = "Mavi",
+                        text = stringResource(R.string.label_theme_ocean),
                         selected = chatBackgroundKey == AppSettings.CHAT_BG_OCEAN,
                         onClick = {
                             onBackgroundThemeChange(AppSettings.CHAT_BG_OCEAN)
@@ -533,7 +556,7 @@ private fun ConversationDetailScreen(
                         }
                     )
                     ThemeOptionButton(
-                        text = "Mint",
+                        text = stringResource(R.string.label_theme_mint),
                         selected = chatBackgroundKey == AppSettings.CHAT_BG_MINT,
                         onClick = {
                             onBackgroundThemeChange(AppSettings.CHAT_BG_MINT)
@@ -541,7 +564,7 @@ private fun ConversationDetailScreen(
                         }
                     )
                     ThemeOptionButton(
-                        text = "Gunbatimi",
+                        text = stringResource(R.string.label_theme_sunset),
                         selected = chatBackgroundKey == AppSettings.CHAT_BG_SUNSET,
                         onClick = {
                             onBackgroundThemeChange(AppSettings.CHAT_BG_SUNSET)
@@ -552,7 +575,7 @@ private fun ConversationDetailScreen(
             },
             confirmButton = {
                 TextButton(onClick = { showThemeDialog = false }) {
-                    Text("Kapat")
+                    Text(stringResource(R.string.action_close))
                 }
             }
         )
@@ -561,8 +584,8 @@ private fun ConversationDetailScreen(
     if (showDeleteConversationDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteConversationDialog = false },
-            title = { Text("Sohbet silinsin mi?") },
-            text = { Text("Bu kisiyle tum mesajlar silinecek.") },
+            title = { Text(stringResource(R.string.label_delete_conversation_prompt)) },
+            text = { Text(stringResource(R.string.label_conversation_delete_desc)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -570,8 +593,8 @@ private fun ConversationDetailScreen(
                         coroutineScope.launch {
                             val result = showSnackbarForThreeSeconds(
                                 snackbarHostState = snackbarHostState,
-                                message = "Sohbet silinecek",
-                                actionLabel = "Geri al"
+                                message = conversationWillDeleteLabel,
+                                actionLabel = undoLabel
                             )
                             if (result != SnackbarResult.ActionPerformed) {
                                 onDeleteConversation()
@@ -579,15 +602,119 @@ private fun ConversationDetailScreen(
                         }
                     }
                 ) {
-                    Text("Sil")
+                    Text(stringResource(R.string.action_delete))
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDeleteConversationDialog = false }) {
-                    Text("Iptal")
+                    Text(stringResource(R.string.action_cancel))
                 }
             }
         )
+    }
+}
+
+@Composable
+private fun DayHeaderChip(text: String) {
+    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        Surface(
+            shape = RoundedCornerShape(999.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+            shadowElevation = 1.dp
+        ) {
+            Text(
+                text = text,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+    }
+}
+
+@Composable
+private fun ConversationSummaryStrip(
+    messageCount: Int,
+    themeKey: String
+) {
+    val selectedTheme = when (themeKey) {
+        AppSettings.CHAT_BG_OCEAN -> stringResource(R.string.label_theme_ocean)
+        AppSettings.CHAT_BG_MINT -> stringResource(R.string.label_theme_mint)
+        AppSettings.CHAT_BG_SUNSET -> stringResource(R.string.label_theme_sunset)
+        else -> stringResource(R.string.label_theme_classic)
+    }
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.86f),
+        shadowElevation = 2.dp
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Text(
+                    text = stringResource(R.string.label_chat_messages_count, messageCount),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            Surface(shape = RoundedCornerShape(999.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
+                Text(
+                    text = stringResource(R.string.label_chat_theme_pill, selectedTheme),
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ConversationEmptyCard() {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 36.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+            shadowElevation = 2.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(stringResource(R.string.label_sms), fontWeight = FontWeight.Bold)
+                    }
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(
+                    text = stringResource(R.string.label_no_messages),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = stringResource(R.string.label_conversation_empty_desc),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 
@@ -603,9 +730,9 @@ private fun ConversationTopBar(
         onBackClick = onBackClick,
         startColor = MaterialTheme.colorScheme.primary,
         endColor = MaterialTheme.colorScheme.secondary,
-        actionLabel = "Tema",
+        actionLabel = stringResource(R.string.label_theme_action),
         onActionClick = onThemeClick,
-        secondActionLabel = "Sil",
+        secondActionLabel = stringResource(R.string.action_delete),
         onSecondActionClick = onDeleteConversationClick
     )
 }
@@ -621,7 +748,7 @@ private fun ThemeOptionButton(
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Text(if (selected) "$text (Secili)" else text)
+        Text(if (selected) stringResource(R.string.label_theme_selected_suffix, text) else text)
     }
 }
 
@@ -646,7 +773,7 @@ private fun ComposerBar(
                 value = inputText,
                 onValueChange = onInputChanged,
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Mesaj yaz...") },
+                placeholder = { Text(stringResource(R.string.label_message_placeholder)) },
                 shape = RoundedCornerShape(24.dp),
                 maxLines = 4
             )
@@ -656,7 +783,7 @@ private fun ComposerBar(
                 shape = RoundedCornerShape(16.dp),
                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
             ) {
-                Text("Gonder", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.action_send), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -694,6 +821,15 @@ private fun MessageBubble(
     } else {
         RoundedCornerShape(topStart = 6.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
     }
+    var appeared by remember(message.id, message.date) { mutableStateOf(false) }
+    LaunchedEffect(message.id, message.date) { appeared = true }
+    val alpha by animateFloatAsState(targetValue = if (appeared) 1f else 0f, animationSpec = tween(240), label = "bubble-alpha")
+    val shiftY by animateFloatAsState(targetValue = if (appeared) 0f else 18f, animationSpec = tween(260), label = "bubble-shift")
+    val popScale by animateFloatAsState(
+        targetValue = if (appeared) 1f else if (isSent) 1.08f else 0.97f,
+        animationSpec = tween(260),
+        label = "bubble-pop-scale"
+    )
 
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = rowAlignment) {
         Surface(
@@ -704,14 +840,60 @@ private fun MessageBubble(
             modifier = Modifier.combinedClickable(
                 onClick = {},
                 onLongClick = onLongPress
+            ).graphicsLayer(
+                alpha = alpha,
+                translationY = shiftY,
+                scaleX = popScale,
+                scaleY = popScale
             )
         ) {
-            Text(
-                text = message.body,
-                color = textColor,
-                modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
+                Text(
+                    text = message.body,
+                    color = textColor,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = message.date.toChatTime(),
+                    color = if (isSent) Color.White.copy(alpha = 0.78f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
     }
+}
+
+private sealed interface ChatRow {
+    val key: String
+
+    data class DayHeader(val label: String) : ChatRow {
+        override val key: String = "header_$label"
+    }
+
+    data class MessageRow(val message: SmsModel) : ChatRow {
+        override val key: String = "msg_${message.id}_${message.date}"
+    }
+}
+
+private fun buildChatRows(messages: List<SmsModel>): List<ChatRow> {
+    val rows = mutableListOf<ChatRow>()
+    var previousDayLabel: String? = null
+    for (message in messages) {
+        val dayLabel = message.date.toChatDayLabel()
+        if (dayLabel != previousDayLabel) {
+            rows.add(ChatRow.DayHeader(dayLabel))
+            previousDayLabel = dayLabel
+        }
+        rows.add(ChatRow.MessageRow(message))
+    }
+    return rows
+}
+
+private fun Long.toChatDayLabel(): String {
+    return SimpleDateFormat("dd MMMM yyyy", Locale.getDefault()).format(Date(this))
+}
+
+private fun Long.toChatTime(): String {
+    return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(this))
 }

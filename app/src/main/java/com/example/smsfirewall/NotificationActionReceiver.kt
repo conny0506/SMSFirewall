@@ -1,4 +1,4 @@
-package com.example.smsfirewall
+﻿package com.example.smsfirewall
 
 import android.content.BroadcastReceiver
 import android.content.ContentValues
@@ -10,33 +10,46 @@ import androidx.core.app.NotificationManagerCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class NotificationActionReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action == "ACTION_TRUST_NUMBER") {
-            val sender = intent.getStringExtra("sender") ?: return
-            val body = intent.getStringExtra("body") ?: ""
-            val notificationId = intent.getIntExtra("notificationId", 0)
+        if (intent.action != ACTION_TRUST_NUMBER) return
 
-            val db = AppDatabase.getDatabase(context)
+        if (!SmsRoleUtils.isAppDefaultSmsHandler(context)) {
+            Toast.makeText(context, context.getString(R.string.toast_requires_default_sms_app), Toast.LENGTH_SHORT).show()
+            return
+        }
 
-            CoroutineScope(Dispatchers.IO).launch {
-                // 1. Numarayı Güvenli Listeye Ekle
+        val sender = intent.getStringExtra(EXTRA_SENDER) ?: return
+        val body = intent.getStringExtra(EXTRA_BODY) ?: ""
+        val notificationId = intent.getIntExtra(EXTRA_NOTIFICATION_ID, 0)
+
+        val pendingResult = goAsync()
+        val db = AppDatabase.getDatabase(context)
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                // 1. Numarayi Guvenli Listeye Ekle
                 db.trustedNumberDao().insert(TrustedNumber(sender))
 
-                // 2. Mesajı Inbox'a (Gelen Kutusuna) Taşı
+                // 2. Mesaji Inbox'a (Gelen Kutusuna) Tasi
                 saveToInbox(context, sender, body)
 
-                // 3. Spam Kutusundan Sil (Opsiyonel, temizlik için)
-                // (Burada veritabanından son eklenen spamı bulup silebiliriz ama
-                // şimdilik Inbox'a kopyalamak yeterli)
-
-                // 4. Bildirimi Kapat
+                // 3. Bildirimi Kapat
                 NotificationManagerCompat.from(context).cancel(notificationId)
-            }
 
-            Toast.makeText(context, "$sender güvenli listeye eklendi.", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.toast_trusted_number_added, sender),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
+            } finally {
+                pendingResult.finish()
+            }
         }
     }
 
@@ -49,5 +62,12 @@ class NotificationActionReceiver : BroadcastReceiver() {
             put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
         }
         context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values)
+    }
+
+    companion object {
+        const val ACTION_TRUST_NUMBER = "ACTION_TRUST_NUMBER"
+        const val EXTRA_SENDER = "sender"
+        const val EXTRA_BODY = "body"
+        const val EXTRA_NOTIFICATION_ID = "notificationId"
     }
 }
