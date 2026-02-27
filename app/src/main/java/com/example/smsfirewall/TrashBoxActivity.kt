@@ -46,13 +46,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import com.example.smsfirewall.ui.components.TopGradientBar
 import com.example.smsfirewall.ui.theme.AppSpacing
 import com.example.smsfirewall.ui.theme.SMSFirewallTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -90,7 +90,7 @@ class TrashBoxActivity : FragmentActivity() {
     }
 
     private fun loadTrashConversations() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val dao = AppDatabase.getDatabase(applicationContext).trashMessageDao()
             val allTrash = dao.getAllTrash()
             val grouped = allTrash
@@ -98,7 +98,8 @@ class TrashBoxActivity : FragmentActivity() {
                 .values
                 .map { messages ->
                     val latest = messages.maxByOrNull { it.deletedAt } ?: messages.first()
-                    val displayName = messages.firstOrNull { it.sender.isNotBlank() }?.sender ?: getString(R.string.label_unknown_sender)
+                    val displayName = messages.firstOrNull { it.sender.isNotBlank() }?.sender
+                        ?: getString(R.string.label_unknown_sender)
                     TrashConversationItem(
                         threadId = latest.threadId,
                         displayName = displayName,
@@ -122,7 +123,7 @@ class TrashBoxActivity : FragmentActivity() {
             return
         }
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
                 val dao = AppDatabase.getDatabase(applicationContext).trashMessageDao()
                 val messages = dao.getByThreadId(item.threadId)
@@ -134,7 +135,10 @@ class TrashBoxActivity : FragmentActivity() {
                         put(Telephony.Sms.BODY, message.body)
                         put(Telephony.Sms.DATE, message.date)
                         put(Telephony.Sms.TYPE, message.type)
-                        put(Telephony.Sms.READ, if (message.type == Telephony.Sms.MESSAGE_TYPE_SENT) 1 else 0)
+                        put(
+                            Telephony.Sms.READ,
+                            if (message.type == Telephony.Sms.MESSAGE_TYPE_SENT) 1 else 0
+                        )
                     }
 
                     val targetUri = if (message.type == Telephony.Sms.MESSAGE_TYPE_SENT) {
@@ -164,7 +168,11 @@ class TrashBoxActivity : FragmentActivity() {
                             Toast.LENGTH_SHORT
                         ).show()
                     } else {
-                        Toast.makeText(this@TrashBoxActivity, getString(R.string.toast_restore_failed), Toast.LENGTH_SHORT).show()
+                        Toast.makeText(
+                            this@TrashBoxActivity,
+                            getString(R.string.toast_restore_failed),
+                            Toast.LENGTH_SHORT
+                        ).show()
                     }
                 }
             } catch (e: Exception) {
@@ -180,17 +188,21 @@ class TrashBoxActivity : FragmentActivity() {
     }
 
     private fun deleteConversationPermanently(item: TrashConversationItem) {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             AppDatabase.getDatabase(applicationContext).trashMessageDao().deleteByThreadId(item.threadId)
             withContext(Dispatchers.Main) {
                 trashConversations.removeAll { it.threadId == item.threadId }
-                Toast.makeText(this@TrashBoxActivity, getString(R.string.toast_trash_conversation_deleted), Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    this@TrashBoxActivity,
+                    getString(R.string.toast_trash_conversation_deleted),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
 
     private fun bulkDeleteTrash() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             AppDatabase.getDatabase(applicationContext).trashMessageDao().deleteAll()
             withContext(Dispatchers.Main) {
                 val deletedCount = trashConversations.size

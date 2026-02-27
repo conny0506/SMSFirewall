@@ -1,0 +1,26 @@
+﻿<resources>
+    <plurals name="label_new_count">
+        <item quantity="one">%1$d yeni</item>
+        <item quantity="other">%1$d yeni</item>
+    </plurals>
+    <plurals name="label_messages_count">
+        <item quantity="one">%1$d mesaj</item>
+        <item quantity="other">%1$d mesaj</item>
+    </plurals>
+    <plurals name="label_conversation_count">
+        <item quantity="one">%1$d sohbet</item>
+        <item quantity="other">%1$d sohbet</item>
+    </plurals>
+    <plurals name="toast_conversation_restored_count">
+        <item quantity="one">Sohbet geri yuklendi (%1$d mesaj)</item>
+        <item quantity="other">Sohbet geri yuklendi (%1$d mesaj)</item>
+    </plurals>
+    <plurals name="toast_bulk_deleted_count">
+        <item quantity="one">%1$d sohbet kalici silindi</item>
+        <item quantity="other">%1$d sohbet kalici silindi</item>
+    </plurals>
+    <plurals name="toast_bulk_conversation_deleted_count">
+        <item quantity="one">%1$d sohbet silindi</item>
+        <item quantity="other">%1$d sohbet silindi</item>
+    </plurals>
+</resources>

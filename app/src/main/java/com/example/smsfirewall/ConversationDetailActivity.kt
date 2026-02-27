@@ -69,6 +69,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import com.example.smsfirewall.ui.theme.AppSpacing
 import com.example.smsfirewall.ui.theme.ChatReceivedBubble
 import com.example.smsfirewall.ui.theme.ChatSentBubble
@@ -77,7 +78,6 @@ import com.example.smsfirewall.ui.components.TopGradientBar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -144,7 +144,11 @@ class ConversationDetailActivity : FragmentActivity() {
         smsContentObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 super.onChange(selfChange)
-                if (ContextCompat.checkSelfPermission(this@ConversationDetailActivity, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+                if (ContextCompat.checkSelfPermission(
+                        this@ConversationDetailActivity,
+                        Manifest.permission.READ_SMS
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
                     loadMessages()
                 }
             }
@@ -167,7 +171,7 @@ class ConversationDetailActivity : FragmentActivity() {
     private fun loadMessages() {
         val localThreadId = threadId ?: return
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             markThreadMessagesAsRead(localThreadId)
             val loadedMessages = mutableListOf<SmsModel>()
 
@@ -279,7 +283,7 @@ class ConversationDetailActivity : FragmentActivity() {
             return
         }
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val trashItem = TrashMessage(
                 originalSmsId = message.id,
                 sender = message.address,
@@ -309,7 +313,11 @@ class ConversationDetailActivity : FragmentActivity() {
                 if (deletedRows > 0) {
                     messageList.removeAll { it.id == message.id }
                 } else {
-                    Toast.makeText(this@ConversationDetailActivity, getString(R.string.toast_message_delete_failed), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@ConversationDetailActivity,
+                        getString(R.string.toast_message_delete_failed),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }
@@ -323,7 +331,7 @@ class ConversationDetailActivity : FragmentActivity() {
 
         val localThreadId = threadId ?: return
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val trashItems = queryThreadMessagesForTrash(localThreadId)
             val deletedRows = contentResolver.delete(
                 Telephony.Sms.CONTENT_URI,
@@ -338,7 +346,11 @@ class ConversationDetailActivity : FragmentActivity() {
                 if (deletedRows > 0) {
                     finish()
                 } else {
-                    Toast.makeText(this@ConversationDetailActivity, getString(R.string.toast_no_message_to_delete), Toast.LENGTH_SHORT).show()
+                    Toast.makeText(
+                        this@ConversationDetailActivity,
+                        getString(R.string.toast_no_message_to_delete),
+                        Toast.LENGTH_SHORT
+                    ).show()
                 }
             }
         }

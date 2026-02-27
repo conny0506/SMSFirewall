@@ -41,6 +41,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import com.example.smsfirewall.ui.components.TopGradientBar
 import com.example.smsfirewall.ui.theme.AppSpacing
 import com.example.smsfirewall.ui.theme.AvatarRedEnd
@@ -49,7 +50,6 @@ import com.example.smsfirewall.ui.theme.SMSFirewallTheme
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,7 +84,7 @@ class SpamBoxActivity : FragmentActivity() {
     }
 
     private fun loadSpamMessages() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val db = AppDatabase.getDatabase(applicationContext)
             val spamMessages = db.spamMessageDao().getAllSpam()
 

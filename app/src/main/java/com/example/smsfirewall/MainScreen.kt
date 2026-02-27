@@ -62,6 +62,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -150,27 +151,50 @@ fun MainScreen(
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
 
-    val visibleSmsList = smsList.filterNot { it.threadId in pendingDeleteThreadIds }
-    val orderedSmsList = visibleSmsList.sortedWith(
-        compareByDescending<SmsModel> { it.threadId in pinnedThreadIds }
-            .thenByDescending { it.date }
-    )
-    val filteredList = orderedSmsList.filter { sms ->
-        val matchesSearch = searchQuery.isBlank() ||
-            sms.address.contains(searchQuery, ignoreCase = true) ||
-            sms.body.contains(searchQuery, ignoreCase = true)
-
-        val matchesFilter = when (inboxFilter) {
-            InboxFilter.ALL -> true
-            InboxFilter.UNREAD -> localShowUnreadIndicators && sms.unreadCount > 0 && sms.threadId !in mutedThreadIds
+    val visibleSmsList by remember(smsList, pendingDeleteThreadIds) {
+        derivedStateOf {
+            smsList.filterNot { it.threadId in pendingDeleteThreadIds }
         }
-        matchesSearch && matchesFilter
+    }
+    val orderedSmsList by remember(visibleSmsList, pinnedThreadIds) {
+        derivedStateOf {
+            visibleSmsList.sortedWith(
+                compareByDescending<SmsModel> { it.threadId in pinnedThreadIds }
+                    .thenByDescending { it.date }
+            )
+        }
+    }
+    val filteredList by remember(
+        orderedSmsList,
+        searchQuery,
+        inboxFilter,
+        localShowUnreadIndicators,
+        mutedThreadIds
+    ) {
+        derivedStateOf {
+            orderedSmsList.filter { sms ->
+                val matchesSearch = searchQuery.isBlank() ||
+                    sms.address.contains(searchQuery, ignoreCase = true) ||
+                    sms.body.contains(searchQuery, ignoreCase = true)
+
+                val matchesFilter = when (inboxFilter) {
+                    InboxFilter.ALL -> true
+                    InboxFilter.UNREAD ->
+                        localShowUnreadIndicators && sms.unreadCount > 0 && sms.threadId !in mutedThreadIds
+                }
+                matchesSearch && matchesFilter
+            }
+        }
     }
 
-    val unreadTotal = if (localShowUnreadIndicators) {
-        filteredList.filterNot { it.threadId in mutedThreadIds }.sumOf { it.unreadCount }
-    } else {
-        0
+    val unreadTotal by remember(filteredList, localShowUnreadIndicators, mutedThreadIds) {
+        derivedStateOf {
+            if (localShowUnreadIndicators) {
+                filteredList.filterNot { it.threadId in mutedThreadIds }.sumOf { it.unreadCount }
+            } else {
+                0
+            }
+        }
     }
     val snackbarConversationDeleted = stringResource(R.string.snackbar_conversation_deleted)
     val undoLabel = stringResource(R.string.action_undo)
@@ -288,7 +312,11 @@ fun MainScreen(
 
                 AnimatedVisibility(
                     visible = selectedThreadIds.isNotEmpty(),
-                    enter = fadeIn(animationSpec = tween(180)) + slideInVertically(initialOffsetY = { -it / 2 }, animationSpec = tween(220)),
+                    enter = fadeIn(animationSpec = tween(180)) +
+                        slideInVertically(
+                            initialOffsetY = { -it / 2 },
+                            animationSpec = tween(220)
+                        ),
                     exit = fadeOut(animationSpec = tween(120))
                 ) {
                     SelectionActionBar(
@@ -367,7 +395,11 @@ fun MainScreen(
                         isLoading = isTrashLoading,
                         onRestoreConversation = { item ->
                             if (!SmsRoleUtils.isAppDefaultSmsHandler(context)) {
-                                Toast.makeText(context, context.getString(R.string.toast_restore_requires_default_sms), Toast.LENGTH_SHORT).show()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.toast_restore_requires_default_sms),
+                                    Toast.LENGTH_SHORT
+                                ).show()
                             } else {
                                 coroutineScope.launch {
                                     val restoredCount = withContext(Dispatchers.IO) {
@@ -404,7 +436,11 @@ fun MainScreen(
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     } else {
-                                        Toast.makeText(context, context.getString(R.string.toast_restore_failed), Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.toast_restore_failed),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
                                     }
                                 }
                             }
@@ -783,11 +819,25 @@ private fun SpamTabContent(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(item.address, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        item.address,
+                                        style = MaterialTheme.typography.titleSmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(item.body, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text(
+                                        item.body,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Text(item.date.toDayTime(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        item.date.toDayTime(),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -837,7 +887,12 @@ private fun TrashTabContent(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
-                                Text(item.displayName, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    item.displayName,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = stringResource(R.string.label_delete_selected_desc, item.messageCount),
@@ -1246,8 +1301,16 @@ private fun SmsConversationCard(
     val hasUnread = showUnreadIndicators && sms.unreadCount > 0 && !muted
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
-    val cardScale by animateFloatAsState(targetValue = if (pressed) 0.985f else 1f, animationSpec = tween(120), label = "card-press-scale")
-    val extraElevation by animateDpAsState(targetValue = if (pressed) 8.dp else 0.dp, animationSpec = tween(140), label = "card-press-elevation")
+    val cardScale by animateFloatAsState(
+        targetValue = if (pressed) 0.985f else 1f,
+        animationSpec = tween(120),
+        label = "card-press-scale"
+    )
+    val extraElevation by animateDpAsState(
+        targetValue = if (pressed) 8.dp else 0.dp,
+        animationSpec = tween(140),
+        label = "card-press-elevation"
+    )
     Card(
         modifier = Modifier
             .graphicsLayer(scaleX = cardScale, scaleY = cardScale)
@@ -1270,7 +1333,13 @@ private fun SmsConversationCard(
             ),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (hasUnread || selected) 5.dp + extraElevation else 2.dp + extraElevation)
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (hasUnread || selected) {
+                5.dp + extraElevation
+            } else {
+                2.dp + extraElevation
+            }
+        )
     ) {
         Row(
             modifier = Modifier

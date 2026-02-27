@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +39,6 @@ import androidx.fragment.app.FragmentActivity
 import com.example.smsfirewall.ui.components.TopGradientBar
 import com.example.smsfirewall.ui.theme.AppSpacing
 import com.example.smsfirewall.ui.theme.SMSFirewallTheme
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -72,6 +72,7 @@ private fun SettingsScreen(
     var chatBackgroundKey by remember(context) { mutableStateOf(AppSettings.getChatBackgroundKey(context)) }
     var notificationContentVisible by remember(context) { mutableStateOf(AppSettings.isNotificationContentVisible(context)) }
     var showClearTrashDialog by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
 
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -157,7 +158,7 @@ private fun SettingsScreen(
                 TextButton(
                     onClick = {
                         showClearTrashDialog = false
-                        CoroutineScope(Dispatchers.IO).launch {
+                        coroutineScope.launch(Dispatchers.IO) {
                             AppDatabase.getDatabase(context).trashMessageDao().deleteAll()
                             withContext(Dispatchers.Main) {
                                 onShowToast(context.getString(R.string.toast_trash_cleared))
@@ -287,7 +288,11 @@ private fun BackgroundThemeCard(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(stringResource(R.string.label_default_chat_background), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                stringResource(R.string.label_default_chat_background),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ThemeChip(stringResource(R.string.label_theme_classic), AppSettings.CHAT_BG_CLASSIC, selectedKey, onSelect)
                 ThemeChip(stringResource(R.string.label_theme_ocean), AppSettings.CHAT_BG_OCEAN, selectedKey, onSelect)

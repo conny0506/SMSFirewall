@@ -21,8 +21,8 @@ import androidx.compose.runtime.setValue
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
 import com.example.smsfirewall.ui.theme.SMSFirewallTheme
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -110,7 +110,11 @@ class MainActivity : FragmentActivity() {
         smsContentObserver = object : ContentObserver(Handler(Looper.getMainLooper())) {
             override fun onChange(selfChange: Boolean) {
                 super.onChange(selfChange)
-                if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+                if (ContextCompat.checkSelfPermission(
+                        this@MainActivity,
+                        Manifest.permission.READ_SMS
+                    ) == PackageManager.PERMISSION_GRANTED
+                ) {
                     loadSms()
                 }
             }
@@ -175,7 +179,7 @@ class MainActivity : FragmentActivity() {
             return
         }
 
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val trashItems = queryThreadMessagesForTrash(sms.threadId)
             val deletedRows = contentResolver.delete(
                 Telephony.Sms.CONTENT_URI,
@@ -205,7 +209,7 @@ class MainActivity : FragmentActivity() {
         }
 
         val selectedThreadIds = conversations.map { it.threadId }.toSet()
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             var deletedThreadCount = 0
             for (sms in conversations) {
                 val trashItems = queryThreadMessagesForTrash(sms.threadId)
@@ -285,7 +289,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun loadSms() {
-        CoroutineScope(Dispatchers.IO).launch {
+        lifecycleScope.launch(Dispatchers.IO) {
             val loaded = mutableListOf<SmsModel>()
             val unreadCountMap = loadUnreadCountsByThread()
             val cursor = contentResolver.query(
