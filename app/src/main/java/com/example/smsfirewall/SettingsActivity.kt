@@ -66,6 +66,7 @@ class SettingsActivity : FragmentActivity() {
     }
 }
 
+@Suppress("UNUSED_VALUE")
 @Composable
 private fun SettingsScreen(
     onBackClick: () -> Unit,

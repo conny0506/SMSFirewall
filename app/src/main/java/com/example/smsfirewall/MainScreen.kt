@@ -29,7 +29,6 @@ import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +39,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.onSizeChanged
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -81,6 +81,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -124,6 +125,7 @@ private data class TrashConversationSummary(
     val lastDeletedAt: Long
 )
 
+@Suppress("UNUSED_VALUE")
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 fun MainScreen(
@@ -644,7 +646,6 @@ fun MainScreen(
                         }
                     )
                 }
-                HomeTab.INBOX -> Unit
             }
         }
         }
@@ -859,6 +860,8 @@ private fun HomeBottomBar(
         animationSpec = tween(280),
         label = "bottom-bar-elevation"
     )
+    val density = LocalDensity.current
+    var containerWidth by remember { mutableStateOf(0.dp) }
     Surface(
         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
         shape = RoundedCornerShape(20.dp),
@@ -866,12 +869,15 @@ private fun HomeBottomBar(
         shadowElevation = barElevation.dp,
         color = MaterialTheme.colorScheme.surface
     ) {
-        BoxWithConstraints(
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 11.dp)
+                .onSizeChanged { size ->
+                    containerWidth = with(density) { size.width.toDp() }
+                }
         ) {
-            val segmentWidth = maxWidth / 4
+            val segmentWidth = (containerWidth / 4f).coerceAtLeast(0.dp)
             val targetOffset = segmentWidth * selectedIndex
             val animatedOffset by animateDpAsState(
                 targetValue = targetOffset,

@@ -1,10 +1,5 @@
 package com.example.smsfirewall
 
-private data class SpamSignal(
-    val label: String,
-    val weight: Int
-)
-
 data class SpamInsight(
     val score: Int,
     val reasons: List<String>

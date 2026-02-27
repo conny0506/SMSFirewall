@@ -223,6 +223,7 @@ class TrashBoxActivity : FragmentActivity() {
     }
 }
 
+@Suppress("UNUSED_VALUE")
 @Composable
 private fun TrashBoxScreen(
     conversations: List<TrashConversationItem>,

@@ -22,8 +22,6 @@ val ChatReceivedBubble = Color(0xFFEAF0FF)
 
 val AvatarBlueStart = Color(0xFF3B82F6)
 val AvatarBlueEnd = Color(0xFF22D3EE)
-val AvatarRedStart = Color(0xFFF97316)
-val AvatarRedEnd = Color(0xFFEF4444)
 
 val AppColorScheme = lightColorScheme(
     primary = BrandPrimary,
