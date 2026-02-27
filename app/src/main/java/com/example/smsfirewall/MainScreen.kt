@@ -1,4 +1,5 @@
-﻿package com.example.smsfirewall
+@file:Suppress("UNUSED_VALUE")
+package com.example.smsfirewall
 
 import android.content.ContentValues
 import android.content.Intent
@@ -39,7 +40,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.onSizeChanged
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -86,6 +87,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import com.example.smsfirewall.ui.theme.AppSpacing
 import com.example.smsfirewall.ui.theme.AvatarBlueEnd
@@ -407,15 +409,15 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 AnimatedContent(
-                    targetState = inboxFilter to searchQuery,
+                    targetState = filteredList,
                     transitionSpec = {
                         (fadeIn(animationSpec = tween(220)) +
                             slideInVertically(initialOffsetY = { it / 10 }, animationSpec = tween(220)))
                             .togetherWith(fadeOut(animationSpec = tween(160)))
                     },
                     label = "inbox-filter-transition"
-                ) {
-                    if (filteredList.isEmpty()) {
+                ) { currentList ->
+                    if (currentList.isEmpty()) {
                         EmptyState(modifier = Modifier.weight(1f))
                     } else {
                         LazyColumn(
@@ -423,7 +425,7 @@ fun MainScreen(
                             contentPadding = PaddingValues(bottom = 88.dp),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            items(filteredList, key = { it.threadId }) { sms ->
+                            items(currentList, key = { it.threadId }) { sms ->
                                 Box {
                                     SwipeDeleteConversationItem(
                                         onDelete = { pendingDelete = sms }
@@ -464,6 +466,7 @@ fun MainScreen(
             }
         } else {
             when (currentTab) {
+                HomeTab.INBOX -> Unit
                 HomeTab.SPAM -> {
                     SpamTabContent(
                         modifier = Modifier
@@ -873,7 +876,7 @@ private fun HomeBottomBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 11.dp)
-                .onSizeChanged { size ->
+                .onSizeChanged { size: IntSize ->
                     containerWidth = with(density) { size.width.toDp() }
                 }
         ) {

@@ -1,4 +1,5 @@
-﻿package com.example.smsfirewall
+@file:Suppress("UNUSED_VALUE")
+package com.example.smsfirewall
 
 import android.content.ContentValues
 import android.os.Bundle

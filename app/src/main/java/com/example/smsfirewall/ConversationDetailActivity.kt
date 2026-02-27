@@ -1,3 +1,4 @@
+@file:Suppress("UNUSED_VALUE")
 package com.example.smsfirewall
 
 import android.Manifest
