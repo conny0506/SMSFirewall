@@ -5,7 +5,6 @@ import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -38,14 +37,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.lifecycleScope
 import com.example.smsfirewall.ui.components.TopGradientBar
 import com.example.smsfirewall.ui.theme.AppSpacing
-import com.example.smsfirewall.ui.theme.AvatarRedEnd
-import com.example.smsfirewall.ui.theme.AvatarRedStart
 import com.example.smsfirewall.ui.theme.SMSFirewallTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -58,6 +54,8 @@ class SpamBoxActivity : FragmentActivity() {
 
     private val spamList = mutableStateListOf<SmsModel>()
     private var isLoading by mutableStateOf(true)
+    private var blockedWords by mutableStateOf<List<String>>(emptyList())
+    private var trustedNumbers by mutableStateOf<Set<String>>(emptySet())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,14 +66,10 @@ class SpamBoxActivity : FragmentActivity() {
                 SpamBoxScreen(
                     spamList = spamList,
                     isLoading = isLoading,
+                    blockedWords = blockedWords,
+                    trustedNumbers = trustedNumbers,
                     onBackClick = { finish() },
-                    onItemClick = { sms ->
-                        Toast.makeText(
-                            this,
-                            getString(R.string.toast_spam_content, sms.body),
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
+                    onTrustNumber = { number -> addTrustedNumber(number) }
                 )
             }
         }
@@ -87,6 +81,8 @@ class SpamBoxActivity : FragmentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val db = AppDatabase.getDatabase(applicationContext)
             val spamMessages = db.spamMessageDao().getAllSpam()
+            val words = db.blockedWordDao().getWordListRaw()
+            val trusted = db.trustedNumberDao().getAll()
 
             withContext(Dispatchers.Main) {
                 spamList.clear()
@@ -102,7 +98,28 @@ class SpamBoxActivity : FragmentActivity() {
                         )
                     }
                 )
+                blockedWords = words
+                trustedNumbers = trusted.toSet()
                 isLoading = false
+            }
+        }
+    }
+
+    private fun addTrustedNumber(number: String) {
+        if (trustedNumbers.contains(number)) {
+            Toast.makeText(this, getString(R.string.toast_trusted_number_exists), Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            AppDatabase.getDatabase(applicationContext).trustedNumberDao().insert(TrustedNumber(number))
+            withContext(Dispatchers.Main) {
+                trustedNumbers = trustedNumbers + number
+                Toast.makeText(
+                    this@SpamBoxActivity,
+                    getString(R.string.toast_trusted_number_added, number),
+                    Toast.LENGTH_SHORT
+                ).show()
             }
         }
     }
@@ -112,8 +129,10 @@ class SpamBoxActivity : FragmentActivity() {
 private fun SpamBoxScreen(
     spamList: List<SmsModel>,
     isLoading: Boolean,
+    blockedWords: List<String>,
+    trustedNumbers: Set<String>,
     onBackClick: () -> Unit,
-    onItemClick: (SmsModel) -> Unit
+    onTrustNumber: (String) -> Unit
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
@@ -127,6 +146,8 @@ private fun SpamBoxScreen(
                 .padding(padding)
                 .padding(horizontal = AppSpacing.large)
         ) {
+            Spacer(modifier = Modifier.height(10.dp))
+            SpamHeroCard(count = spamList.size)
             Spacer(modifier = Modifier.height(10.dp))
             SpamSummaryCard(spamCount = spamList.size)
             Spacer(modifier = Modifier.height(10.dp))
@@ -157,9 +178,70 @@ private fun SpamBoxScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(spamList, key = { it.threadId }) { sms ->
-                            SpamMessageCard(sms = sms, onClick = { onItemClick(sms) })
+                            SpamMessageInsightCard(
+                                item = sms,
+                                blockedWords = blockedWords,
+                                isTrusted = trustedNumbers.contains(sms.address),
+                                selected = false,
+                                selectionMode = false,
+                                onLongClick = {},
+                                onDelete = {},
+                                onTrustNumber = onTrustNumber
+                            )
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpamHeroCard(count: Int) {
+    val brush = Brush.linearGradient(
+        listOf(
+            MaterialTheme.colorScheme.tertiary,
+            MaterialTheme.colorScheme.primary
+        )
+    )
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Column(
+            modifier = Modifier
+                .background(brush)
+                .padding(horizontal = 16.dp, vertical = 14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.label_spam_hero_title),
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        text = stringResource(R.string.label_spam_hero_desc),
+                        color = Color.White.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.White.copy(alpha = 0.22f)
+                ) {
+                    Text(
+                        text = count.toString(),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
@@ -257,76 +339,4 @@ private fun SpamTopBar(count: Int, onBackClick: () -> Unit) {
         endColor = MaterialTheme.colorScheme.primary,
         badgeText = count.toString()
     )
-}
-
-@Composable
-private fun SpamMessageCard(
-    sms: SmsModel,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val avatarBrush = Brush.linearGradient(
-                listOf(AvatarRedStart, AvatarRedEnd)
-            )
-
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(avatarBrush, CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "!",
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.size(10.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = sms.address,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = sms.body,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            Spacer(modifier = Modifier.size(8.dp))
-            Text(
-                text = sms.date.toSpamTime(),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-private fun Long.toSpamTime(): String {
-    val format = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
-    return format.format(Date(this))
 }

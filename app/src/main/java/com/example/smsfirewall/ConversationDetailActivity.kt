@@ -36,6 +36,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
@@ -90,6 +92,7 @@ class ConversationDetailActivity : FragmentActivity() {
     private val messageList = mutableStateListOf<SmsModel>()
     private var inputText by mutableStateOf("")
     private var chatBackgroundKey by mutableStateOf(AppSettings.CHAT_BG_CLASSIC)
+    private var blockedWords by mutableStateOf<List<String>>(emptyList())
 
     private var threadId: String? = null
     private var address: String? = null
@@ -110,6 +113,7 @@ class ConversationDetailActivity : FragmentActivity() {
                     messages = messageList,
                     inputText = inputText,
                     chatBackgroundKey = chatBackgroundKey,
+                    blockedWords = blockedWords,
                     onInputChanged = { inputText = it },
                     onBackgroundThemeChange = { key ->
                         chatBackgroundKey = key
@@ -125,6 +129,13 @@ class ConversationDetailActivity : FragmentActivity() {
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
             loadMessages()
+        }
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val words = AppDatabase.getDatabase(applicationContext).blockedWordDao().getWordListRaw()
+            withContext(Dispatchers.Main) {
+                blockedWords = words
+            }
         }
     }
 
@@ -415,6 +426,7 @@ private fun ConversationDetailScreen(
     messages: List<SmsModel>,
     inputText: String,
     chatBackgroundKey: String,
+    blockedWords: List<String>,
     onInputChanged: (String) -> Unit,
     onBackgroundThemeChange: (String) -> Unit,
     onBackClick: () -> Unit,
@@ -482,6 +494,14 @@ private fun ConversationDetailScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
+                ConversationHeroCard(
+                    title = title,
+                    messageCount = visibleMessages.size,
+                    themeKey = chatBackgroundKey
+                )
+            }
+
+            item {
                 ConversationSummaryStrip(
                     messageCount = visibleMessages.size,
                     themeKey = chatBackgroundKey
@@ -499,6 +519,7 @@ private fun ConversationDetailScreen(
                         is ChatRow.MessageRow -> {
                             MessageBubble(
                                 message = row.message,
+                                blockedWords = blockedWords,
                                 onLongPress = { pendingDeleteMessage = row.message }
                             )
                         }
@@ -641,6 +662,66 @@ private fun DayHeaderChip(text: String) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontWeight = FontWeight.SemiBold
             )
+        }
+    }
+}
+
+@Composable
+private fun ConversationHeroCard(
+    title: String,
+    messageCount: Int,
+    themeKey: String
+) {
+    val brush = when (themeKey) {
+        AppSettings.CHAT_BG_OCEAN -> Brush.linearGradient(listOf(Color(0xFF1E63B3), Color(0xFF4BC6E8)))
+        AppSettings.CHAT_BG_MINT -> Brush.linearGradient(listOf(Color(0xFF0D9488), Color(0xFF52D6B1)))
+        AppSettings.CHAT_BG_SUNSET -> Brush.linearGradient(listOf(Color(0xFFE76F51), Color(0xFFF4A261)))
+        else -> Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary))
+    }
+
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Column(
+            modifier = Modifier
+                .background(brush)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = stringResource(R.string.label_chat_hero_desc),
+                        color = Color.White.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.White.copy(alpha = 0.22f)
+                ) {
+                    Text(
+                        text = messageCount.toString(),
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
         }
     }
 }
@@ -822,12 +903,16 @@ private suspend fun showSnackbarForThreeSeconds(
 @OptIn(ExperimentalFoundationApi::class)
 private fun MessageBubble(
     message: SmsModel,
+    blockedWords: List<String>,
     onLongPress: () -> Unit
 ) {
     val isSent = message.type == Telephony.Sms.MESSAGE_TYPE_SENT
     val rowAlignment = if (isSent) Arrangement.End else Arrangement.Start
     val bubbleColor = if (isSent) ChatSentBubble else ChatReceivedBubble
     val textColor = if (isSent) Color.White else MaterialTheme.colorScheme.onSurface
+    val riskInsight = remember(message.id, blockedWords) {
+        if (!isSent) buildSpamInsight(message.address, message.body, blockedWords) else null
+    }
     val bubbleShape = if (isSent) {
         RoundedCornerShape(topStart = 18.dp, topEnd = 6.dp, bottomStart = 18.dp, bottomEnd = 18.dp)
     } else {
@@ -860,6 +945,21 @@ private fun MessageBubble(
             )
         ) {
             Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp)) {
+                if (!isSent && riskInsight != null && riskInsight.score >= 60) {
+                    Surface(
+                        shape = RoundedCornerShape(999.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
+                    ) {
+                        Text(
+                            text = stringResource(R.string.label_risk_badge),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
                 Text(
                     text = message.body,
                     color = textColor,

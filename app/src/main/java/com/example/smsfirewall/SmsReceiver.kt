@@ -30,6 +30,7 @@ class SmsReceiver : BroadcastReceiver() {
                     val db = AppDatabase.getDatabase(context)
                     val blockedDao = db.blockedWordDao()
                     val spamDao = db.spamMessageDao()
+                    val trustedDao = db.trustedNumberDao()
 
                     // Mesaj parcalarini al
                     val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
@@ -46,9 +47,13 @@ class SmsReceiver : BroadcastReceiver() {
                         val timestamp = messages[0].timestampMillis
                         val messageContent = fullMessageBody.toString()
 
+                        val isTrusted = trustedDao.isTrusted(sender)
+
                         // Spam Kontrolu (Kelime listesini cek)
                         val blockedWords = blockedDao.getWordListRaw()
-                        val isSpam = blockedWords.any { messageContent.lowercase().contains(it.lowercase()) }
+                        val isSpam = !isTrusted && blockedWords.any {
+                            messageContent.lowercase().contains(it.lowercase())
+                        }
 
                         if (isSpam) {
                             if (BuildConfig.DEBUG) {

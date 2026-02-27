@@ -5,6 +5,7 @@
     <string name="activity_spam_box_label">Spam Kutusu</string>
     <string name="activity_trash_box_label">Cop Kutusu</string>
     <string name="activity_settings_label">Ayarlar</string>
+    <string name="activity_trusted_list_label">Guvenli Liste</string>
 
     <string name="label_unknown_sender">Bilinmeyen</string>
     <string name="label_messages">Mesajlar</string>
@@ -60,6 +61,20 @@
     <string name="label_settings_section_notifications">Bildirimler</string>
     <string name="label_settings_section_chat">Sohbet gorunumu</string>
     <string name="label_settings_section_cleanup">Temizlik</string>
+    <string name="label_settings_section_security">Guvenlik</string>
+    <string name="label_trusted_center_title">Guvenli Liste Merkezi</string>
+    <string name="label_trusted_center_desc">Guvenli numaralari goruntule ve yonet</string>
+    <string name="label_security_pulse">Guvenlik Nabzi</string>
+    <string name="label_security_pulse_desc">Son hareketlerin kisa ozeti</string>
+    <string name="label_spam_hero_title">Spam Kilidi</string>
+    <string name="label_spam_hero_desc">Supheli mesajlari temiz ve net ayikla</string>
+    <string name="label_trash_hero_title">Geri Donusum Alani</string>
+    <string name="label_trash_hero_desc">Silinen sohbetler burada guvende</string>
+    <string name="label_settings_hero_title">Kontrol Merkezi</string>
+    <string name="label_settings_hero_desc">Bildirim, tema ve guvenlik ayarlari</string>
+    <string name="label_chat_hero_title">Sohbet Akisi</string>
+    <string name="label_chat_hero_desc">Gorunum ve temayi buradan sekillendir</string>
+    <string name="label_risk_badge">Riskli</string>
     <string name="label_settings_overview_title">Hizli durum</string>
     <string name="label_settings_unread_on">Rozetler acik</string>
     <string name="label_settings_unread_off">Rozetler kapali</string>
@@ -71,14 +86,19 @@
     <string name="label_conversation_empty_desc">Yeni mesaj gondererek sohbeti baslatabilirsin.</string>
     <string name="label_new_message">Yeni mesaj</string>
     <string name="label_search_conversations">Sohbet veya mesaj ara</string>
+    <string name="label_search_spam">Spam icinde ara</string>
     <string name="label_filter_all">Tumu</string>
     <string name="label_filter_unread">Okunmamis</string>
+    <string name="label_filter_high_risk">Yuksek risk</string>
     <string name="label_filter_recent">Son 3 gun</string>
     <string name="label_selected">Secili</string>
     <string name="label_select">Sec</string>
     <string name="label_selected_count">%1$d sohbet secildi</string>
+    <string name="label_spam_selected_count">%1$d spam secildi</string>
     <string name="label_delete_selected_prompt">Secilen sohbetler silinsin mi?</string>
     <string name="label_delete_selected_desc">%1$d sohbet cop kutusuna tasinacak.</string>
+    <string name="label_delete_spam_prompt">Spam silinsin mi?</string>
+    <string name="label_delete_spam_desc">%1$s numarasindan gelen spam silinecek.</string>
     <string name="label_start_new_chat">Yeni sohbet baslat</string>
     <string name="label_new_chat_placeholder">Numara veya kisi adi</string>
     <string name="label_pinned_short">Sabit</string>
@@ -88,6 +108,15 @@
     <string name="label_tab_trash">Cop</string>
     <string name="label_tab_settings">Ayarlar</string>
     <string name="label_tab_placeholder_desc">%1$s ekranini acmak icin devam et.</string>
+    <string name="label_trusted_add">Numara ekle</string>
+    <string name="label_trusted_input_hint">Numara veya kisa kod</string>
+    <string name="label_trusted_empty">Guvenli liste bos</string>
+    <string name="label_trusted_summary_title">Guvenli liste ozeti</string>
+    <string name="label_trusted_summary_subtitle">Onayli numaralar burada tutulur</string>
+    <string name="label_trusted_hint">Bu numaradan gelen mesajlar engellenmez</string>
+    <string name="label_spam_score">Spam skoru</string>
+    <string name="label_filter_reasons">Filtre nedenleri</string>
+    <string name="label_trusted_badge">Guvenli</string>
 
     <string name="action_delete">Sil</string>
     <string name="action_cancel">Iptal</string>
@@ -100,16 +129,22 @@
     <string name="action_undo">Geri al</string>
     <string name="action_start_chat">Sohbet Ac</string>
     <string name="action_clear_selection">Temizle</string>
+    <string name="action_select_all">Tumunu Sec</string>
+    <string name="action_trust_selected">Guvenli listeye ekle</string>
     <string name="action_delete_selected">Toplu Sil</string>
     <string name="action_pin">Sabitle</string>
     <string name="action_unpin">Sabiti Kaldir</string>
     <string name="action_mute">Sessize Al</string>
     <string name="action_unmute">Sesi Ac</string>
     <string name="action_open_screen">Ekrani Ac</string>
+    <string name="action_add">Ekle</string>
+    <string name="action_remove">Kaldir</string>
+    <string name="action_trust">Guvenli listeye ekle</string>
 
     <string name="snackbar_conversation_deleted">Sohbet silindi</string>
     <string name="snackbar_message_deleted">Mesaj silindi</string>
     <string name="snackbar_conversation_will_delete">Sohbet silinecek</string>
+    <string name="snackbar_spam_deleted">Spam silindi</string>
 
     <string name="toast_read_sms_permission_required">SMS okuma izni gerekli!</string>
     <string name="toast_sms_role_not_supported">Cihaz SMS rolunu desteklemiyor</string>
@@ -124,6 +159,9 @@
     <string name="toast_trash_conversation_deleted">Sohbet cop kutusundan silindi</string>
     <string name="toast_trash_cleared">Cop kutusu temizlendi</string>
     <string name="toast_trusted_number_added">%1$s guvenli listeye eklendi.</string>
+    <string name="toast_trusted_numbers_added">%1$d numara guvenli listeye eklendi.</string>
+    <string name="toast_trusted_number_removed">%1$s guvenli listeden kaldirildi.</string>
+    <string name="toast_trusted_number_exists">Numara zaten guvenli listede.</string>
     <string name="toast_spam_content">Spam icerigi: %1$s</string>
     <string name="toast_requires_default_sms_app">Bu islem icin varsayilan SMS uygulamasi olmalisin.</string>
 

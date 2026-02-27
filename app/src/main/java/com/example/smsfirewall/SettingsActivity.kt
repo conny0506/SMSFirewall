@@ -1,9 +1,11 @@
 ﻿package com.example.smsfirewall
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -31,6 +33,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -93,6 +97,10 @@ private fun SettingsScreen(
         ) {
             item {
                 Spacer(modifier = Modifier.height(8.dp))
+                SettingsHeroCard()
+            }
+
+            item {
                 SettingsOverviewCard(
                     unreadBadgesEnabled = unreadBadgesEnabled,
                     notificationContentVisible = notificationContentVisible,
@@ -132,6 +140,19 @@ private fun SettingsScreen(
                     onSelect = { key ->
                         chatBackgroundKey = key
                         AppSettings.setChatBackgroundKey(context, key)
+                    }
+                )
+            }
+
+            item {
+                SectionLabel(text = stringResource(R.string.label_settings_section_security))
+                ActionCard(
+                    title = stringResource(R.string.label_trusted_center_title),
+                    subtitle = stringResource(R.string.label_trusted_center_desc),
+                    buttonText = stringResource(R.string.action_open_screen),
+                    onClick = {
+                        val intent = Intent(context, TrustedListActivity::class.java)
+                        context.startActivity(intent)
                     }
                 )
             }
@@ -249,6 +270,39 @@ private fun StatusPill(label: String) {
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.Medium
         )
+    }
+}
+
+@Composable
+private fun SettingsHeroCard() {
+    val brush = Brush.linearGradient(
+        listOf(
+            MaterialTheme.colorScheme.primary,
+            MaterialTheme.colorScheme.secondary
+        )
+    )
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+    ) {
+        Column(
+            modifier = Modifier
+                .background(brush)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.label_settings_hero_title),
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold,
+                color = Color.White
+            )
+            Text(
+                text = stringResource(R.string.label_settings_hero_desc),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.85f)
+            )
+        }
     }
 }
 

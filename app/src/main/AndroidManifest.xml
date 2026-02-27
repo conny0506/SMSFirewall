@@ -69,6 +69,11 @@
             android:exported="false"
             android:label="@string/activity_settings_label" />
 
+        <activity
+            android:name=".TrustedListActivity"
+            android:exported="false"
+            android:label="@string/activity_trusted_list_label" />
+
         <receiver
             android:name=".NotificationActionReceiver"
             android:exported="false" />

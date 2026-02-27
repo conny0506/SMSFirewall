@@ -3,26 +3,26 @@ package com.example.smsfirewall.ui.theme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
-val BrandPrimary = Color(0xFF13579B)
-val BrandSecondary = Color(0xFF0D9488)
-val BrandTertiary = Color(0xFFE76F51)
+val BrandPrimary = Color(0xFF0B2F5B)
+val BrandSecondary = Color(0xFF0E7490)
+val BrandTertiary = Color(0xFFD97706)
 
-val AppBackground = Color(0xFFF2F6FB)
+val AppBackground = Color(0xFFF5F7FB)
 val AppSurface = Color(0xFFFFFFFF)
-val AppSurfaceVariant = Color(0xFFE4EAF4)
-val AppOnSurface = Color(0xFF162033)
-val AppOnSurfaceVariant = Color(0xFF6A788F)
+val AppSurfaceVariant = Color(0xFFE7EDF6)
+val AppOnSurface = Color(0xFF0E1A2B)
+val AppOnSurfaceVariant = Color(0xFF5C6A83)
 
-val WarningContainer = Color(0xFFFFF1EE)
-val WarningContainerStrong = Color(0xFFFFDDD5)
-val WarningOnContainer = Color(0xFF8F1D21)
+val WarningContainer = Color(0xFFFFF2EC)
+val WarningContainerStrong = Color(0xFFFFD8CB)
+val WarningOnContainer = Color(0xFF8A2E0B)
 
-val ChatSentBubble = Color(0xFF2F6FED)
-val ChatReceivedBubble = Color(0xFFE5ECF8)
+val ChatSentBubble = Color(0xFF1D4ED8)
+val ChatReceivedBubble = Color(0xFFEAF0FF)
 
-val AvatarBlueStart = Color(0xFF5A7EFA)
-val AvatarBlueEnd = Color(0xFF4BC6E8)
-val AvatarRedStart = Color(0xFFFB7185)
+val AvatarBlueStart = Color(0xFF3B82F6)
+val AvatarBlueEnd = Color(0xFF22D3EE)
+val AvatarRedStart = Color(0xFFF97316)
 val AvatarRedEnd = Color(0xFFEF4444)
 
 val AppColorScheme = lightColorScheme(

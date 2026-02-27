@@ -1,6 +1,7 @@
 ﻿package com.example.smsfirewall
 
 import android.content.ContentValues
+import android.content.Intent
 import android.provider.Telephony
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
@@ -12,6 +13,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -62,6 +67,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -86,9 +92,6 @@ import com.example.smsfirewall.ui.theme.AvatarBlueStart
 import com.example.smsfirewall.ui.theme.WarningContainer
 import com.example.smsfirewall.ui.theme.WarningContainerStrong
 import com.example.smsfirewall.ui.theme.WarningOnContainer
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -100,6 +103,11 @@ import kotlin.math.min
 private enum class InboxFilter {
     ALL,
     UNREAD
+}
+
+private enum class SpamFilter {
+    ALL,
+    HIGH_RISK
 }
 
 private enum class HomeTab {
@@ -137,6 +145,8 @@ fun MainScreen(
     var mutedThreadIds by remember(context) { mutableStateOf(AppSettings.getMutedThreadIds(context)) }
     var searchQuery by remember { mutableStateOf("") }
     var inboxFilter by remember { mutableStateOf(InboxFilter.ALL) }
+    var spamSearchQuery by remember { mutableStateOf("") }
+    var spamFilter by remember { mutableStateOf(SpamFilter.ALL) }
     var selectedTab by remember { mutableStateOf(HomeTab.INBOX) }
     var showNewChatDialog by remember { mutableStateOf(false) }
     var newChatAddress by remember { mutableStateOf("") }
@@ -144,9 +154,16 @@ fun MainScreen(
     var notificationContentVisible by remember(context) { mutableStateOf(AppSettings.isNotificationContentVisible(context)) }
     var chatBackgroundKey by remember(context) { mutableStateOf(AppSettings.getChatBackgroundKey(context)) }
     val spamList = remember { mutableStateListOf<SmsModel>() }
+    var blockedWords by remember { mutableStateOf<List<String>>(emptyList()) }
+    var trustedNumbers by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var selectedSpamIds by remember { mutableStateOf(setOf<String>()) }
     val trashConversations = remember { mutableStateListOf<TrashConversationSummary>() }
     var isSpamLoading by remember { mutableStateOf(false) }
     var isTrashLoading by remember { mutableStateOf(false) }
+    var previousSpamCount by remember { mutableStateOf(0) }
+    var showFabPulse by remember { mutableStateOf(false) }
+    var pendingSpamDeleteItem by remember { mutableStateOf<SmsModel?>(null) }
+    var pendingSpamDeleteIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     val snackbarHostState = remember { SnackbarHostState() }
     val coroutineScope = rememberCoroutineScope()
@@ -196,15 +213,55 @@ fun MainScreen(
             }
         }
     }
+    val filteredSpamList by remember(spamList, spamSearchQuery, spamFilter, blockedWords) {
+        derivedStateOf {
+            spamList.filter { sms ->
+                val matchesQuery = spamSearchQuery.isBlank() ||
+                    sms.address.contains(spamSearchQuery, ignoreCase = true) ||
+                    sms.body.contains(spamSearchQuery, ignoreCase = true)
+
+                val matchesFilter = when (spamFilter) {
+                    SpamFilter.ALL -> true
+                    SpamFilter.HIGH_RISK -> {
+                        val insight = buildSpamInsight(sms.address, sms.body, blockedWords)
+                        insight.score >= 60
+                    }
+                }
+                matchesQuery && matchesFilter
+            }
+        }
+    }
     val snackbarConversationDeleted = stringResource(R.string.snackbar_conversation_deleted)
     val undoLabel = stringResource(R.string.action_undo)
+    val spamDeletedLabel = stringResource(R.string.snackbar_spam_deleted)
+
+    val spamCountFlow = remember(context) {
+        AppDatabase.getDatabase(context.applicationContext).spamMessageDao().getSpamCountFlow()
+    }
+    val spamCount by spamCountFlow.collectAsState(initial = 0)
+
+    LaunchedEffect(spamCount) {
+        if (spamCount > previousSpamCount) {
+            showFabPulse = true
+            delay(5000)
+            showFabPulse = false
+        }
+        previousSpamCount = spamCount
+    }
 
     LaunchedEffect(selectedTab) {
         if (selectedTab == HomeTab.SPAM) {
             isSpamLoading = true
-            val spamMessages = withContext(Dispatchers.IO) {
-                AppDatabase.getDatabase(context.applicationContext).spamMessageDao().getAllSpam()
+            val result = withContext(Dispatchers.IO) {
+                val db = AppDatabase.getDatabase(context.applicationContext)
+                val spamMessages = db.spamMessageDao().getAllSpam()
+                val words = db.blockedWordDao().getWordListRaw()
+                val trusted = db.trustedNumberDao().getAll()
+                Triple(spamMessages, words, trusted)
             }
+            val spamMessages = result.first
+            blockedWords = result.second
+            trustedNumbers = result.third.toSet()
             spamList.clear()
             spamList.addAll(
                 spamMessages.map { spam ->
@@ -254,8 +311,13 @@ fun MainScreen(
                 enter = fadeIn(animationSpec = tween(220)) + slideInVertically(initialOffsetY = { it / 2 }, animationSpec = tween(260)),
                 exit = fadeOut(animationSpec = tween(180)) + slideOutVertically(targetOffsetY = { it / 2 }, animationSpec = tween(220))
             ) {
-                FloatingActionButton(onClick = { showNewChatDialog = true }) {
-                    Text(text = stringResource(R.string.label_new_message), fontWeight = FontWeight.Bold)
+                Box(contentAlignment = Alignment.Center) {
+                    FloatingActionButton(onClick = { showNewChatDialog = true }) {
+                        Text(text = stringResource(R.string.label_new_message), fontWeight = FontWeight.Bold)
+                    }
+                    if (showFabPulse && spamCount > 0) {
+                        FabPulseRing()
+                    }
                 }
             }
         },
@@ -277,27 +339,40 @@ fun MainScreen(
             label = "home-tab-content"
         ) { currentTab ->
         if (currentTab == HomeTab.INBOX) {
+            val inboxBrush = Brush.verticalGradient(
+                listOf(
+                    MaterialTheme.colorScheme.background,
+                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                    MaterialTheme.colorScheme.background
+                )
+            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .padding(horizontal = AppSpacing.xLarge)
+                    .background(inboxBrush)
             ) {
                 Spacer(modifier = Modifier.height(14.dp))
 
-                MainHeroHeader(
-                    threadCount = filteredList.size,
-                    unreadCount = unreadTotal
-                )
+                StaggeredEnter(delayMillis = 0) {
+                    MainHeroHeader(
+                        threadCount = filteredList.size,
+                        unreadCount = unreadTotal,
+                        spamCount = spamCount
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                SearchAndFilterBar(
-                    query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    selectedFilter = inboxFilter,
-                    onFilterChange = { inboxFilter = it }
-                )
+                StaggeredEnter(delayMillis = 80) {
+                    SearchAndFilterBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        selectedFilter = inboxFilter,
+                        onFilterChange = { inboxFilter = it }
+                    )
+                }
 
                 Spacer(modifier = Modifier.height(AppSpacing.medium))
 
@@ -329,46 +404,56 @@ fun MainScreen(
                 }
                 Spacer(modifier = Modifier.height(10.dp))
 
-                if (filteredList.isEmpty()) {
-                    EmptyState(modifier = Modifier.weight(1f))
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(bottom = 88.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        items(filteredList, key = { it.threadId }) { sms ->
-                            Box {
-                                SwipeDeleteConversationItem(
-                                    onDelete = { pendingDelete = sms }
-                                ) {
-                                    SmsConversationCard(
-                                        sms = sms,
-                                        showUnreadIndicators = localShowUnreadIndicators,
-                                        selected = sms.threadId in selectedThreadIds,
-                                        selectionMode = selectedThreadIds.isNotEmpty(),
-                                        pinned = sms.threadId in pinnedThreadIds,
-                                        muted = sms.threadId in mutedThreadIds,
-                                        onClick = {
-                                            if (selectedThreadIds.isNotEmpty()) {
+                AnimatedContent(
+                    targetState = inboxFilter to searchQuery,
+                    transitionSpec = {
+                        (fadeIn(animationSpec = tween(220)) +
+                            slideInVertically(initialOffsetY = { it / 10 }, animationSpec = tween(220)))
+                            .togetherWith(fadeOut(animationSpec = tween(160)))
+                    },
+                    label = "inbox-filter-transition"
+                ) {
+                    if (filteredList.isEmpty()) {
+                        EmptyState(modifier = Modifier.weight(1f))
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 88.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(filteredList, key = { it.threadId }) { sms ->
+                                Box {
+                                    SwipeDeleteConversationItem(
+                                        onDelete = { pendingDelete = sms }
+                                    ) {
+                                        SmsConversationCard(
+                                            sms = sms,
+                                            showUnreadIndicators = localShowUnreadIndicators,
+                                            selected = sms.threadId in selectedThreadIds,
+                                            selectionMode = selectedThreadIds.isNotEmpty(),
+                                            pinned = sms.threadId in pinnedThreadIds,
+                                            muted = sms.threadId in mutedThreadIds,
+                                            onClick = {
+                                                if (selectedThreadIds.isNotEmpty()) {
+                                                    selectedThreadIds = toggleId(selectedThreadIds, sms.threadId)
+                                                } else {
+                                                    onConversationClick(sms)
+                                                }
+                                            },
+                                            onLongClick = {
                                                 selectedThreadIds = toggleId(selectedThreadIds, sms.threadId)
-                                            } else {
-                                                onConversationClick(sms)
+                                            },
+                                            onDeleteClick = { pendingDelete = sms },
+                                            onTogglePin = {
+                                                pinnedThreadIds = toggleId(pinnedThreadIds, sms.threadId)
+                                                AppSettings.setPinnedThreadIds(context, pinnedThreadIds)
+                                            },
+                                            onToggleMute = {
+                                                mutedThreadIds = toggleId(mutedThreadIds, sms.threadId)
+                                                AppSettings.setMutedThreadIds(context, mutedThreadIds)
                                             }
-                                        },
-                                        onLongClick = {
-                                            selectedThreadIds = toggleId(selectedThreadIds, sms.threadId)
-                                        },
-                                        onDeleteClick = { pendingDelete = sms },
-                                        onTogglePin = {
-                                            pinnedThreadIds = toggleId(pinnedThreadIds, sms.threadId)
-                                            AppSettings.setPinnedThreadIds(context, pinnedThreadIds)
-                                        },
-                                        onToggleMute = {
-                                            mutedThreadIds = toggleId(mutedThreadIds, sms.threadId)
-                                            AppSettings.setMutedThreadIds(context, mutedThreadIds)
-                                        }
-                                    )
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -382,8 +467,77 @@ fun MainScreen(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(padding),
-                        spamList = spamList,
-                        isLoading = isSpamLoading
+                        spamList = filteredSpamList,
+                        isLoading = isSpamLoading,
+                        blockedWords = blockedWords,
+                        trustedNumbers = trustedNumbers,
+                        selectedIds = selectedSpamIds,
+                        searchQuery = spamSearchQuery,
+                        selectedFilter = spamFilter,
+                        onSearchChange = { spamSearchQuery = it },
+                        onFilterChange = { spamFilter = it },
+                        onToggleSelected = { id ->
+                            selectedSpamIds = toggleId(selectedSpamIds, id)
+                        },
+                        onClearSelection = { selectedSpamIds = emptySet() },
+                        onSelectAll = {
+                            val allIds = filteredSpamList.map { it.threadId }.toSet()
+                            selectedSpamIds = if (selectedSpamIds.size == allIds.size) {
+                                emptySet()
+                            } else {
+                                allIds
+                            }
+                        },
+                        onBulkTrust = { ids ->
+                            coroutineScope.launch {
+                                val addresses = filteredSpamList
+                                    .filter { it.threadId in ids }
+                                    .map { it.address }
+                                    .distinct()
+                                withContext(Dispatchers.IO) {
+                                    val dao = AppDatabase.getDatabase(context.applicationContext).trustedNumberDao()
+                                    for (address in addresses) {
+                                        dao.insert(TrustedNumber(address))
+                                    }
+                                }
+                                trustedNumbers = trustedNumbers + addresses
+                                selectedSpamIds = emptySet()
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.toast_trusted_numbers_added, addresses.size),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                        onBulkDeleteRequest = { ids ->
+                            pendingSpamDeleteIds = ids
+                        },
+                        onDeleteSingleRequest = { item ->
+                            pendingSpamDeleteItem = item
+                        },
+                        onTrustNumber = { number ->
+                            if (trustedNumbers.contains(number)) {
+                                Toast.makeText(
+                                    context,
+                                    context.getString(R.string.toast_trusted_number_exists),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                coroutineScope.launch {
+                                    withContext(Dispatchers.IO) {
+                                        AppDatabase.getDatabase(context.applicationContext)
+                                            .trustedNumberDao()
+                                            .insert(TrustedNumber(number))
+                                    }
+                                    trustedNumbers = trustedNumbers + number
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.toast_trusted_number_added, number),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+                        }
                     )
                 }
                 HomeTab.TRASH -> {
@@ -463,6 +617,10 @@ fun MainScreen(
                         unreadBadgesEnabled = localShowUnreadIndicators,
                         notificationContentVisible = notificationContentVisible,
                         chatBackgroundKey = chatBackgroundKey,
+                        onOpenTrustedList = {
+                            val intent = Intent(context, TrustedListActivity::class.java)
+                            context.startActivity(intent)
+                        },
                         onUnreadBadgeChange = {
                             localShowUnreadIndicators = it
                             AppSettings.setUnreadBadgesEnabled(context, it)
@@ -557,6 +715,84 @@ fun MainScreen(
             },
             dismissButton = {
                 TextButton(onClick = { pendingBulkDelete = emptyList() }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    pendingSpamDeleteItem?.let { item ->
+        AlertDialog(
+            onDismissRequest = { pendingSpamDeleteItem = null },
+            title = { Text(stringResource(R.string.label_delete_spam_prompt)) },
+            text = { Text(stringResource(R.string.label_delete_spam_desc, item.address)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingSpamDeleteItem = null
+                        coroutineScope.launch {
+                            withContext(Dispatchers.IO) {
+                                val id = item.id.toLongOrNull()
+                                if (id != null) {
+                                    AppDatabase.getDatabase(context.applicationContext)
+                                        .spamMessageDao()
+                                        .deleteById(id)
+                                }
+                            }
+                            spamList.removeAll { it.id == item.id }
+                            selectedSpamIds = selectedSpamIds - item.threadId
+                            showSnackbarForThreeSeconds(
+                                snackbarHostState = snackbarHostState,
+                                message = spamDeletedLabel,
+                                actionLabel = undoLabel
+                            )
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSpamDeleteItem = null }) {
+                    Text(stringResource(R.string.action_cancel))
+                }
+            }
+        )
+    }
+
+    if (pendingSpamDeleteIds.isNotEmpty()) {
+        AlertDialog(
+            onDismissRequest = { pendingSpamDeleteIds = emptySet() },
+            title = { Text(stringResource(R.string.label_delete_selected_prompt)) },
+            text = { Text(stringResource(R.string.label_delete_selected_desc, pendingSpamDeleteIds.size)) },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val ids = pendingSpamDeleteIds
+                        pendingSpamDeleteIds = emptySet()
+                        coroutineScope.launch {
+                            withContext(Dispatchers.IO) {
+                                val db = AppDatabase.getDatabase(context.applicationContext)
+                                val longIds = ids.mapNotNull { it.removePrefix("spam_").toLongOrNull() }
+                                if (longIds.isNotEmpty()) {
+                                    db.spamMessageDao().deleteByIds(longIds)
+                                }
+                            }
+                            spamList.removeAll { it.threadId in ids }
+                            selectedSpamIds = emptySet()
+                            showSnackbarForThreeSeconds(
+                                snackbarHostState = snackbarHostState,
+                                message = spamDeletedLabel,
+                                actionLabel = undoLabel
+                            )
+                        }
+                    }
+                ) {
+                    Text(stringResource(R.string.action_delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSpamDeleteIds = emptySet() }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             }
@@ -735,7 +971,21 @@ private fun ModernTabChip(
 private fun SpamTabContent(
     modifier: Modifier = Modifier,
     spamList: List<SmsModel>,
-    isLoading: Boolean
+    isLoading: Boolean,
+    blockedWords: List<String>,
+    trustedNumbers: Set<String>,
+    selectedIds: Set<String>,
+    searchQuery: String,
+    selectedFilter: SpamFilter,
+    onSearchChange: (String) -> Unit,
+    onFilterChange: (SpamFilter) -> Unit,
+    onToggleSelected: (String) -> Unit,
+    onClearSelection: () -> Unit,
+    onSelectAll: () -> Unit,
+    onBulkTrust: (Set<String>) -> Unit,
+    onBulkDeleteRequest: (Set<String>) -> Unit,
+    onDeleteSingleRequest: (SmsModel) -> Unit,
+    onTrustNumber: (String) -> Unit
 ) {
     val spamBrush = Brush.verticalGradient(
         listOf(
@@ -749,10 +999,34 @@ private fun SpamTabContent(
             .background(spamBrush)
             .padding(horizontal = AppSpacing.large, vertical = 12.dp)
     ) {
-        AnimatedVisibility(
-            visible = true,
-            enter = fadeIn(animationSpec = tween(260)) + slideInVertically(initialOffsetY = { -it / 3 }, animationSpec = tween(320))
-        ) {
+        StaggeredEnter(delayMillis = 0) {
+            SectionHeroCard(
+                title = stringResource(R.string.label_spam_hero_title),
+                subtitle = stringResource(R.string.label_spam_hero_desc),
+                badgeText = spamList.size.toString(),
+                startColor = MaterialTheme.colorScheme.tertiary,
+                endColor = MaterialTheme.colorScheme.primary
+            )
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        SpamSearchAndFilterBar(
+            query = searchQuery,
+            onQueryChange = onSearchChange,
+            selectedFilter = selectedFilter,
+            onFilterChange = onFilterChange
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        if (selectedIds.isNotEmpty()) {
+            SpamSelectionBar(
+                count = selectedIds.size,
+                onClear = onClearSelection,
+                onSelectAll = onSelectAll,
+                onTrust = { onBulkTrust(selectedIds) },
+                onDelete = { onBulkDeleteRequest(selectedIds) }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
+        StaggeredEnter(delayMillis = 80) {
             Card(
                 shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.65f)),
@@ -813,33 +1087,19 @@ private fun SpamTabContent(
                                 animationSpec = tween(260, delayMillis = min(index * 36, 220))
                             )
                     ) {
-                        Box {
-                            Card(
-                                shape = RoundedCornerShape(14.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                            ) {
-                                Column(modifier = Modifier.padding(12.dp)) {
-                                    Text(
-                                        item.address,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        item.body,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        item.date.toDayTime(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                        SpamSwipeDeleteItem(
+                            onDelete = { onDeleteSingleRequest(item) }
+                        ) {
+                            SpamMessageInsightCard(
+                                item = item,
+                                blockedWords = blockedWords,
+                                isTrusted = trustedNumbers.contains(item.address),
+                                selected = item.threadId in selectedIds,
+                                selectionMode = selectedIds.isNotEmpty(),
+                                onLongClick = { onToggleSelected(item.threadId) },
+                                onDelete = { onDeleteSingleRequest(item) },
+                                onTrustNumber = onTrustNumber
+                            )
                         }
                     }
                 }
@@ -848,6 +1108,7 @@ private fun SpamTabContent(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrashTabContent(
     modifier: Modifier = Modifier,
@@ -856,12 +1117,26 @@ private fun TrashTabContent(
     onRestoreConversation: (TrashConversationSummary) -> Unit,
     onDeletePermanent: (TrashConversationSummary) -> Unit
 ) {
-    Column(modifier = modifier.padding(horizontal = AppSpacing.large, vertical = 12.dp)) {
-        Text(
-            text = stringResource(R.string.label_tab_trash),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
+    val trashBrush = Brush.verticalGradient(
+        listOf(
+            MaterialTheme.colorScheme.background,
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
         )
+    )
+    Column(
+        modifier = modifier
+            .background(trashBrush)
+            .padding(horizontal = AppSpacing.large, vertical = 12.dp)
+    ) {
+        StaggeredEnter(delayMillis = 0) {
+            SectionHeroCard(
+                title = stringResource(R.string.label_trash_hero_title),
+                subtitle = stringResource(R.string.label_trash_hero_desc),
+                badgeText = conversations.size.toString(),
+                startColor = MaterialTheme.colorScheme.primary,
+                endColor = MaterialTheme.colorScheme.secondary
+            )
+        }
         Spacer(modifier = Modifier.height(10.dp))
         if (isLoading) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -882,9 +1157,23 @@ private fun TrashTabContent(
                                 animationSpec = tween(260, delayMillis = min(index * 30, 220))
                             )
                     ) {
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val pressed by interactionSource.collectIsPressedAsState()
+                        val scale by animateFloatAsState(
+                            targetValue = if (pressed) 0.985f else 1f,
+                            animationSpec = tween(120),
+                            label = "trash-card-scale"
+                        )
                         Card(
                             shape = RoundedCornerShape(14.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            modifier = Modifier
+                                .graphicsLayer(scaleX = scale, scaleY = scale)
+                                .combinedClickable(
+                                    interactionSource = interactionSource,
+                                    indication = LocalIndication.current,
+                                    onClick = {}
+                                )
                         ) {
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
@@ -926,17 +1215,30 @@ private fun SettingsTabContent(
     onUnreadBadgeChange: (Boolean) -> Unit,
     onNotificationContentChange: (Boolean) -> Unit,
     onChatBackgroundChange: (String) -> Unit,
+    onOpenTrustedList: () -> Unit,
     onClearTrash: () -> Unit
 ) {
+    val settingsBrush = Brush.verticalGradient(
+        listOf(
+            MaterialTheme.colorScheme.background,
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        )
+    )
     Column(
-        modifier = modifier.padding(horizontal = AppSpacing.large, vertical = 12.dp),
+        modifier = modifier
+            .background(settingsBrush)
+            .padding(horizontal = AppSpacing.large, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        Text(
-            text = stringResource(R.string.label_tab_settings),
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold
-        )
+        StaggeredEnter(delayMillis = 0) {
+            SectionHeroCard(
+                title = stringResource(R.string.label_settings_hero_title),
+                subtitle = stringResource(R.string.label_settings_hero_desc),
+                badgeText = stringResource(R.string.label_tab_settings),
+                startColor = MaterialTheme.colorScheme.primary,
+                endColor = MaterialTheme.colorScheme.secondary
+            )
+        }
         SettingSwitchRow(
             title = stringResource(R.string.label_show_unread_badges),
             subtitle = stringResource(R.string.label_unread_badges_desc),
@@ -975,6 +1277,34 @@ private fun SettingsTabContent(
                         onClick = { onChatBackgroundChange(AppSettings.CHAT_BG_SUNSET) },
                         label = { Text(stringResource(R.string.label_theme_sunset)) }
                     )
+                }
+            }
+        }
+        Card(
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.label_trusted_center_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(R.string.label_trusted_center_desc),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                TextButton(onClick = onOpenTrustedList) {
+                    Text(stringResource(R.string.action_open_screen))
                 }
             }
         }
@@ -1032,6 +1362,37 @@ private fun SearchAndFilterBar(
                 selected = selectedFilter == InboxFilter.UNREAD,
                 onClick = { onFilterChange(InboxFilter.UNREAD) },
                 label = stringResource(R.string.label_filter_unread)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SpamSearchAndFilterBar(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    selectedFilter: SpamFilter,
+    onFilterChange: (SpamFilter) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth(),
+            placeholder = { Text(stringResource(R.string.label_search_spam)) },
+            singleLine = true,
+            shape = RoundedCornerShape(16.dp)
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            MorphFilterChip(
+                selected = selectedFilter == SpamFilter.ALL,
+                onClick = { onFilterChange(SpamFilter.ALL) },
+                label = stringResource(R.string.label_filter_all)
+            )
+            MorphFilterChip(
+                selected = selectedFilter == SpamFilter.HIGH_RISK,
+                onClick = { onFilterChange(SpamFilter.HIGH_RISK) },
+                label = stringResource(R.string.label_filter_high_risk)
             )
         }
     }
@@ -1105,6 +1466,88 @@ private fun SelectionActionBar(
     }
 }
 
+@Composable
+private fun SpamSelectionBar(
+    count: Int,
+    onClear: () -> Unit,
+    onSelectAll: () -> Unit,
+    onTrust: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.label_spam_selected_count, count),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onSelectAll) {
+                    Text(stringResource(R.string.action_select_all))
+                }
+                TextButton(onClick = onTrust) {
+                    Text(stringResource(R.string.action_trust_selected))
+                }
+                TextButton(onClick = onClear) {
+                    Text(stringResource(R.string.action_clear_selection))
+                }
+                FilledTonalButton(onClick = onDelete) {
+                    Text(stringResource(R.string.action_delete_selected), fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SpamSwipeDeleteItem(
+    onDelete: () -> Unit,
+    content: @Composable () -> Unit
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                false
+            } else {
+                false
+            }
+        }
+    )
+
+    SwipeToDismissBox(
+        state = dismissState,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.errorContainer)
+                    .padding(horizontal = 18.dp),
+                contentAlignment = Alignment.CenterEnd
+            ) {
+                Text(
+                    text = stringResource(R.string.action_delete),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        content = { content() }
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeDeleteConversationItem(
@@ -1147,7 +1590,8 @@ private fun SwipeDeleteConversationItem(
 @Composable
 private fun MainHeroHeader(
     threadCount: Int,
-    unreadCount: Int
+    unreadCount: Int,
+    spamCount: Int
 ) {
     val resources = LocalContext.current.resources
     val heroBrush = Brush.linearGradient(
@@ -1210,9 +1654,63 @@ private fun MainHeroHeader(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 MetricPill(label = stringResource(R.string.label_threads), value = threadCount.toString())
                 MetricPill(label = stringResource(R.string.label_unread), value = unreadCount.toString())
+                MetricPill(label = stringResource(R.string.label_spam), value = spamCount.toString())
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = stringResource(R.string.label_security_pulse),
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        text = stringResource(R.string.label_security_pulse_desc),
+                        color = Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                SecurityPulseMiniChart(
+                    values = remember(threadCount, unreadCount, spamCount) {
+                        buildPulseSeries(threadCount, unreadCount, spamCount)
+                    }
+                )
             }
         }
     }
+}
+
+@Composable
+private fun SecurityPulseMiniChart(values: List<Int>) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.Bottom) {
+        values.forEach { value ->
+            val height = 8 + (value.coerceIn(0, 8) * 4)
+            Box(
+                modifier = Modifier
+                    .width(6.dp)
+                    .height(height.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.White.copy(alpha = 0.75f))
+            )
+        }
+    }
+}
+
+private fun buildPulseSeries(
+    threadCount: Int,
+    unreadCount: Int,
+    spamCount: Int
+): List<Int> {
+    val base = listOf(threadCount, unreadCount, spamCount).map { it.coerceAtLeast(0) }
+    val seed = (base[0] * 3 + base[1] * 5 + base[2] * 7) % 9
+    return List(8) { index -> (seed + index * 2 + base[index % 3]) % 9 }
 }
 
 @Composable
@@ -1233,6 +1731,75 @@ private fun MetricPill(label: String, value: String) {
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold
             )
+        }
+    }
+}
+
+@Composable
+private fun SectionHeroCard(
+    title: String,
+    subtitle: String,
+    badgeText: String,
+    startColor: Color,
+    endColor: Color
+) {
+    val brush = Brush.linearGradient(listOf(startColor, endColor))
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier
+                .background(brush)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                    Text(
+                        text = subtitle,
+                        color = Color.White.copy(alpha = 0.85f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.White.copy(alpha = 0.22f)
+                ) {
+                    Text(
+                        text = badgeText,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Surface(
+                    shape = RoundedCornerShape(999.dp),
+                    color = Color.White.copy(alpha = 0.18f)
+                ) {
+                    Text(
+                        text = stringResource(R.string.label_security_pulse),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
         }
     }
 }
@@ -1505,11 +2072,6 @@ private fun EmptyState(modifier: Modifier = Modifier) {
     }
 }
 
-private fun Long.toDayTime(): String {
-    val format = SimpleDateFormat("dd MMM HH:mm", Locale.getDefault())
-    return format.format(Date(this))
-}
-
 private suspend fun showSnackbarForThreeSeconds(
     snackbarHostState: SnackbarHostState,
     message: String,
@@ -1525,6 +2087,58 @@ private suspend fun showSnackbarForThreeSeconds(
     delay(3000)
     snackbarHostState.currentSnackbarData?.dismiss()
     result.await()
+}
+
+@Composable
+private fun FabPulseRing() {
+    val infiniteTransition = rememberInfiniteTransition(label = "fab-pulse")
+    val pulse by infiniteTransition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "fab-pulse-scale"
+    )
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "fab-pulse-alpha"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(74.dp)
+            .graphicsLayer(scaleX = pulse, scaleY = pulse)
+            .background(
+                color = MaterialTheme.colorScheme.primary.copy(alpha = alpha),
+                shape = CircleShape
+            )
+    )
+}
+
+@Composable
+private fun StaggeredEnter(
+    delayMillis: Int,
+    content: @Composable () -> Unit
+) {
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { visible = true }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(animationSpec = tween(220, delayMillis = delayMillis)) +
+            slideInVertically(
+                initialOffsetY = { it / 6 },
+                animationSpec = tween(260, delayMillis = delayMillis)
+            )
+    ) {
+        content()
+    }
 }
 
 

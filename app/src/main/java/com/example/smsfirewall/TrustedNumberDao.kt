@@ -12,4 +12,10 @@ interface TrustedNumberDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM trusted_numbers WHERE phoneNumber = :number)")
     suspend fun isTrusted(number: String): Boolean
+
+    @Query("SELECT phoneNumber FROM trusted_numbers ORDER BY phoneNumber ASC")
+    suspend fun getAll(): List<String>
+
+    @Query("DELETE FROM trusted_numbers WHERE phoneNumber = :number")
+    suspend fun delete(number: String)
 }
